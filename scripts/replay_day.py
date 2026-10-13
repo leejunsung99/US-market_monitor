@@ -17,6 +17,7 @@ from us_market_monitor.database.models import utcnow
 from us_market_monitor.database.repository import Repository
 from us_market_monitor.http import FetchError, Stopped
 from us_market_monitor.main import build_collectors, setup_logging
+from us_market_monitor.notifications.article import enrich_article
 from us_market_monitor.notifications.formatter import format_event
 from us_market_monitor.notifications.telegram import DeliveryError, Telegram
 from us_market_monitor.processors.classifier import Classifier
@@ -180,7 +181,13 @@ def send(config, repo, limit, spacing, stop):
             + format_event(repo.row_event(row))
         )
         try:
-            message_id = telegram.send(text)
+            if hasattr(telegram, "send_article"):
+                event = enrich_article(repo.row_event(row), stop=stop)
+                with repo.db:
+                    repo.update_article(row["id"], event)
+                message_id = telegram.send_article(event, test=True)
+            else:
+                message_id = telegram.send(text)
         except DeliveryError as error:
             repo.delivery_failure(row["id"], error, row["retry_count"])
             print(

@@ -36,6 +36,8 @@ class Classifier:
         return event if status == "approve" else None
 
     def classify(self, event: Event) -> Event | None:
+        if not event.article_summary:
+            event.article_summary = event.summary[:1500]
         self.prepare(event)
         if not event.title.strip() or not event.source.strip():
             return self._decision(event, "reject", "missing_source_metadata")

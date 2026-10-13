@@ -8,6 +8,7 @@ from datetime import timedelta
 
 from us_market_monitor.database.models import utcnow
 from us_market_monitor.http import FetchError, Stopped
+from us_market_monitor.notifications.article import enrich_article
 from us_market_monitor.notifications.formatter import format_event
 from us_market_monitor.notifications.telegram import DeliveryError
 from us_market_monitor.processors.normalizer import parse_time
@@ -94,7 +95,14 @@ class Radar:
             if self.stop.is_set() or not self.repo.claim(row["id"]):
                 break
             try:
-                message_id = self.telegram.send(format_event(self.repo.row_event(row)))
+                event = self.repo.row_event(row)
+                if hasattr(self.telegram, "send_article"):
+                    enrich_article(event, stop=self.stop)
+                    with self.repo.db:
+                        self.repo.update_article(row["id"], event)
+                    message_id = self.telegram.send_article(event)
+                else:
+                    message_id = self.telegram.send(format_event(event))
             except DeliveryError as error:
                 self.repo.delivery_failure(row["id"], error, row["retry_count"])
                 if error.retry_after:

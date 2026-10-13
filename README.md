@@ -106,7 +106,7 @@ SEC는 `data.sec.gov/submissions/CIK##########.json`을 사용합니다. [SEC AP
 
 한국어 등급·사건 제목·핵심 안내·산업·시간 형식을 제공합니다. 원문 제목과 짧은 관련 문구를 함께 표시하며, 영문 기사를 임의로 한국어 사실 문장으로 번역하지 않습니다. AI가 없는 초기 버전은 **한국어 사건 분류 + 원문 근거 발췌** 방식입니다. 관련 기업은 출처에 등장하거나 SEC 공시의 발행 회사인 경우만 표시하고, 시장 영향은 방향·크기를 확정하지 않은 가능성 표현으로 구분합니다.
 
-HTML 특수문자를 이스케이프하고 본문 길이를 제한합니다. 발표 시각과 수집 시각은 별도로 KST 변환하며, DB와 로그 시각은 UTC입니다. `processors/summarizer.py`의 인터페이스를 통해 향후 별도 요약 모듈을 연결할 수 있으나 이번 버전은 AI API를 호출하지 않습니다.
+Telegram 뉴스는 제목 → 실제 기사 이미지 → 원문 핵심 문장 발췌 → 발표 시각(KST)·원문 링크 순서로 표시합니다. 이미지가 없거나 사이트 로고만 있으면 이미지는 생략합니다. 중요도·경쟁관계·수집 시각 등 내부 판단 정보는 메시지에서 제외합니다. 승인된 뉴스만 원문 메타데이터를 조회하며, 원문 요약과 이미지 URL을 DB에 보관합니다. [Telegram Rich Message API](https://core.telegram.org/bots/api#sendrichmessage)를 사용합니다. 요약은 원문 문장 발췌 방식이며, 번역 또는 AI API는 호출하지 않습니다. DB와 로그 시각은 UTC입니다.
 
 ## 기준점·중복·전송 복구
 
@@ -206,7 +206,7 @@ data/ / logs/                   # 로컬 런타임 파일, Git 제외
 .\.venv\Scripts\python.exe -m pip check
 ```
 
-로컬 Windows / Python 3.12에서 **117개 테스트 통과**, Ruff 정적 검사와 `pip check` 통과. 초기 테스트는 GitHub CI의 Windows/Ubuntu × Python 3.11/3.12/3.13 조합도 모두 통과했습니다. 상세 결과와 실제 API 검증 범위는 [docs/VALIDATION.md](docs/VALIDATION.md)에 기록했습니다. 테스트는 외부 네트워크나 실제 Telegram 전송을 사용하지 않습니다. 외부 수집 성공은 별도의 실연동 점검 결과로만 보고합니다.
+로컬 Windows / Python 3.12에서 **119개 테스트 통과**, Ruff 정적 검사와 `pip check` 통과. 초기 테스트는 GitHub CI의 Windows/Ubuntu × Python 3.11/3.12/3.13 조합도 모두 통과했습니다. 상세 결과와 실제 API 검증 범위는 [docs/VALIDATION.md](docs/VALIDATION.md)에 기록했습니다. 테스트는 외부 네트워크나 실제 Telegram 전송을 사용하지 않습니다. 외부 수집 성공은 별도의 실연동 점검 결과로만 보고합니다.
 
 ## 공개 저장소와 비밀 설정
 

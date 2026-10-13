@@ -19,18 +19,26 @@ class Telegram:
         self._next_send = 0.0
 
     def send(self, text):
+        return self._request(
+            "sendMessage",
+            {"text": text, "parse_mode": "HTML", "link_preview_options": {"is_disabled": True}},
+        )
+
+    def send_article(self, event, *, test=False):
+        from us_market_monitor.notifications.formatter import format_rich_article
+
+        return self._request(
+            "sendRichMessage", {"rich_message": format_rich_article(event, test=test)}
+        )
+
+    def _request(self, method, payload):
         if self.stop.wait(max(0, self._next_send - time.monotonic())):
             raise Stopped()
         self._next_send = time.monotonic() + 3.1  # <=20/min to the same group/channel
         try:
             response = requests.post(
-                f"https://api.telegram.org/bot{self._token}/sendMessage",
-                json={
-                    "chat_id": self._chat_id,
-                    "text": text,
-                    "parse_mode": "HTML",
-                    "link_preview_options": {"is_disabled": True},
-                },
+                f"https://api.telegram.org/bot{self._token}/{method}",
+                json={"chat_id": self._chat_id, **payload},
                 timeout=(self.timeout, self.timeout),
             )
         except requests.ConnectTimeout:

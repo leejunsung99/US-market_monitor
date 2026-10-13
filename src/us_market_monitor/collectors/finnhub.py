@@ -46,6 +46,8 @@ class FinnhubCollector:
                         canonical_url(item["url"]),
                         published,
                         metadata={"provider": "finnhub", "query_ticker": self.ticker},
+                        article_summary=plain_text(item.get("summary", ""))[:1500],
+                        image_url=str(item.get("image") or ""),
                     )
                 )
             except (KeyError, ValueError, TypeError, OverflowError, OSError):

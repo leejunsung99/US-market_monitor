@@ -30,6 +30,8 @@ class Event:
     impact_tickers: tuple[str, ...] = ()
     importance_score: float = 0
     score_breakdown: dict = field(default_factory=dict)
+    article_summary: str = ""
+    image_url: str = ""
 
     def __post_init__(self):
         for name in ("published_at", "detected_at"):

@@ -60,16 +60,14 @@ def test_uncertain_industry_news_is_review_only(classifier, event_factory, summa
 def test_relationship_not_claimed_as_source_mention(classifier, event_factory):
     event = classifier.classify(event_factory("CXMT reports progress on denser DRAM architecture"))
     assert event.related_tickers == ()
-    text = format_event(event)
-    assert "경쟁관계 기반 관찰 대상: MU" in text
-    assert "원문에서 확인된 종목 없음" in text
-    assert "제품 출시·양산 완료와 구분" in text
+    assert event.impact_tickers == ("MU",)
+    assert "MU" not in format_event(event)
 
 
 def test_plan_not_labeled_as_launched_or_mass_production(classifier, event_factory):
     event = classifier.classify(event_factory("CXMT confirms plans to launch new DDR5 memory"))
     assert event.event_stage == "announced_plan"
-    assert "실제 출시·양산 미확인" in format_event(event)
+    assert "plans to launch" in format_event(event)
 
 
 def test_ordinary_price_drop_and_ads_still_rejected(classifier, event_factory):

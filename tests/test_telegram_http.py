@@ -25,7 +25,7 @@ def test_telegram_payload_and_html_escaping(monkeypatch, classifier, event_facto
     text = format_event(event)
     assert "&amp;" in text
     assert "<script>" not in text
-    assert "발표 시각:" in text and "수집 시각:" in text and "KST" in text
+    assert "KST" in text and event.source_url in text
     assert "HIGH" not in text
     calls = []
 

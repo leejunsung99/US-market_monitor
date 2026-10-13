@@ -78,6 +78,8 @@ class Repository:
                 "impact_tickers": "TEXT NOT NULL DEFAULT '[]'",
                 "importance_score": "REAL NOT NULL DEFAULT 0",
                 "score_breakdown": "TEXT NOT NULL DEFAULT '{}'",
+                "article_summary": "TEXT NOT NULL DEFAULT ''",
+                "image_url": "TEXT NOT NULL DEFAULT ''",
             }.items():
                 if name not in event_columns:
                     self.db.execute(f"ALTER TABLE events ADD COLUMN {name} {declaration}")
@@ -274,6 +276,7 @@ class Repository:
                     event_id,
                 ),
             )
+            self.update_article(event_id, event)
             self.db.execute(
                 "DELETE FROM review_candidates WHERE observation_hash=?",
                 (self.observation_key(event),),
@@ -316,6 +319,14 @@ class Repository:
             impact_tickers=tuple(json.loads(optional("impact_tickers", "[]"))),
             importance_score=optional("importance_score", 0),
             score_breakdown=json.loads(optional("score_breakdown", "{}")),
+            article_summary=optional("article_summary", ""),
+            image_url=optional("image_url", ""),
+        )
+
+    def update_article(self, event_id, event):
+        self.db.execute(
+            "UPDATE events SET article_summary=?,image_url=?,source_url=? WHERE id=?",
+            (event.article_summary[:1500], event.image_url, event.source_url, event_id),
         )
 
     def recover_inflight(self):
