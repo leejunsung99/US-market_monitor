@@ -1,7 +1,7 @@
 """Use only publisher-provided article text and images. No generated facts or pictures."""
 
 import re
-from urllib.parse import urljoin
+from urllib.parse import unquote, urljoin, urlsplit
 
 from bs4 import BeautifulSoup
 
@@ -18,8 +18,12 @@ def image_url(value):
         r"logo|social-default-image|yahoo_finance_en|/rz/stage/|favicon|placeholder", url, re.I
     ):
         return ""
-    # Ask the publisher's CDN for the same photo as JPEG, supported by Telegram.
-    return url.replace("format_webp", "format_jpg")
+    # Yahoo's signed resize URLs reject format changes; use their embedded original.
+    if urlsplit(url).hostname == "s.yimg.com" and "/mysterio/" in url:
+        original = unquote(url.rsplit("/", 1)[-1])
+        if urlsplit(original).hostname == "media.zenfs.com":
+            return canonical_url(original)
+    return url
 
 
 def source_excerpt(text, title="", limit=800):

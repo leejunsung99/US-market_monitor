@@ -28,6 +28,12 @@ def test_rich_article_order_and_source_only(event_factory, monkeypatch):
 
 
 def test_publisher_photo_and_logo_exclusion(event_factory):
+    assert (
+        image_url(
+            "https://s.yimg.com/lo/mysterio/api/key/resize/https%3A%2F%2Fmedia.zenfs.com%2Fen%2Fphoto.jpg"
+        )
+        == "https://media.zenfs.com/en/photo.jpg"
+    )
     assert image_url("https://example.com/social-default-image-opengraph.jpg") == ""
     assert image_url("javascript:alert(1)") == ""
     event = event_factory("Chip news", summary="Actual publisher summary.")
