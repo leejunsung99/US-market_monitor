@@ -8,11 +8,11 @@ material_scale_patterns:
   - '\b(major|landmark|strategic|giant|mega|transformative)\b|대규모|핵심 사업'
 exclusions:
   - 'price target|target price|analyst rating|upgrades? to buy|downgrades? to|stock picks|stocks? to buy|sponsored|advertorial'
-  - 'why .{0,60}(stock|shares)|shares? (rise|fall|gain|drop)|stock market (today|live)|market wrap|weekly recap'
+  - 'why .{0,60}(stock|shares)|shares? (rise|fall|gain|drop)|stock market (today|live)|stock movers|market movers|market wrap|weekly recap'
   - '목표주가|추천주|주가가 오른 이유|협찬|광고성'
   - '\b(last year|last month|a year ago|previously announced|retrospective)\b|과거 발표|기존 발표 재조명'
 speculation:
-  - '\b(could|may|might|rumou?r|reportedly|weighs|considers|considering|expected to|plans to|in talks|preview|opinion|analysis|what to expect|would)\b'
+  - '\b(could|may|might|rumou?r|reportedly|weighs|considers|considering|expected to|plans to|in talks|in negotiations|negotiating|preview|opinion|analysis|what to expect|would)\b'
   - '검토 중|가능할까|전망한다|예상된다|루머|추측'
 critical_patterns:
   - 'emergency|unscheduled|unexpected|surprise|slashed|withdraws.{0,30}(guidance|outlook)|긴급|예상 밖'

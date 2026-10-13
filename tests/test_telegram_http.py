@@ -17,7 +17,10 @@ def response(status=200, payload=None, headers=None):
 
 def test_telegram_payload_and_html_escaping(monkeypatch, classifier, event_factory):
     event = classifier.classify(
-        event_factory(summary='NVIDIA reports quarterly results <script>bad</script> & "quote"')
+        event_factory(
+            title='NVIDIA reports quarterly results & "quote"',
+            summary='NVIDIA reports quarterly results <script>bad</script> & "quote"',
+        )
     )
     text = format_event(event)
     assert "&amp;" in text

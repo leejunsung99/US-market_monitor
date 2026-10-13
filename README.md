@@ -60,6 +60,17 @@ notepad .env
 
 ## 수집과 중요도 판정
 
+### 특정 날짜 뉴스 재생 테스트
+
+상시 감시를 잠시 중단한 상태에서 아래 명령으로 별도 테스트 DB에 해당 KST 날짜의 중요 사건을 먼저 수집·저장할 수 있습니다. 수집 종료 시각 이후 사건은 포함하지 않습니다. 일반·추측 기사는 제외하며, 남은 중요 사건이 5개보다 적으면 그 건수만 전송합니다.
+
+```powershell
+.\.venv\Scripts\python.exe scripts/replay_day.py --date 2026-10-13 --database data/replay-20261013.sqlite3
+.\.venv\Scripts\python.exe scripts/replay_day.py --database data/replay-20261013.sqlite3 --send --limit 5 --spacing 10
+```
+
+수집은 API 요청 간격을 두고 수행하고, 발송은 저장된 사건의 발표 시간순으로 최대 5개만 보냅니다. 메시지에는 과거 실제 뉴스 재생 테스트임을 표시합니다. 동일 테스트 DB로 명령을 다시 실행해도 이미 발송되거나 결과가 불명확한 전송을 포함해 5개 한도를 유지합니다. 수집 명령을 다시 실행하려면 다른 테스트 DB 이름을 사용하세요. 테스트 종료 후 상시 감시를 다시 실행해야 합니다.
+
 | 소스 | 구현 | 제한·검증 |
 | --- | --- | --- |
 | SEC EDGAR | 공식 티커→CIK 매핑, 회사별 submissions JSON, 8-K/6-K 및 수정 공시, 중요한 8-K item 선별, 해당 공시의 99.x HTML 첨부 최대 2개 | SEC 공유 요청 간격 0.25초. 공시가 존재한다는 사실만으로 승인하지 않음 |
@@ -164,7 +175,7 @@ src/us_market_monitor/
   notifications/telegram.py / formatter.py
   scheduler/jobs.py
 tests/                          # 모의 응답, 분류, 저장, 중복, 복구, 전송 테스트
-scripts/setup.ps1 / check_sources.py
+scripts/setup.ps1 / check_sources.py / replay_day.py
 deploy/us-market-radar.service
 .github/workflows/test.yml       # Windows/Ubuntu, Python 3.11–3.13 CI
 docs/VALIDATION.md               # 실연동 결과와 남은 검증
@@ -179,7 +190,7 @@ data/ / logs/                   # 로컬 런타임 파일, Git 제외
 .\.venv\Scripts\python.exe -m pip check
 ```
 
-로컬 Windows / Python 3.12에서 **87개 테스트 통과**, Ruff 정적 검사와 `pip check` 통과. GitHub CI의 Windows/Ubuntu × Python 3.11/3.12/3.13 조합도 모두 통과했습니다. 상세 결과와 실제 API 검증 범위는 [docs/VALIDATION.md](docs/VALIDATION.md)에 기록했습니다. 테스트는 외부 네트워크나 실제 Telegram 전송을 사용하지 않습니다. 외부 수집 성공은 별도의 실연동 점검 결과로만 보고합니다.
+로컬 Windows / Python 3.12에서 **92개 테스트 통과**, Ruff 정적 검사와 `pip check` 통과. 초기 87개 테스트는 GitHub CI의 Windows/Ubuntu × Python 3.11/3.12/3.13 조합도 모두 통과했습니다. 상세 결과와 실제 API 검증 범위는 [docs/VALIDATION.md](docs/VALIDATION.md)에 기록했습니다. 테스트는 외부 네트워크나 실제 Telegram 전송을 사용하지 않습니다. 외부 수집 성공은 별도의 실연동 점검 결과로만 보고합니다.
 
 ## 공개 저장소와 비밀 설정
 

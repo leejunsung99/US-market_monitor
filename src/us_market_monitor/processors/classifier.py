@@ -44,12 +44,24 @@ class Classifier:
             ):
                 tickers.add(ticker)
         matched, evidence = None, ""
+        # Judge the sentence containing the action, not an unrelated headline.
+        # Forward-looking boilerplate elsewhere must not negate a confirmed release.
+        fragments = [headline, *re.split(r"(?<=[.!?])\s+", plain_text(event.summary))]
+        if event.metadata.get("official"):
+            fragments.extend(re.split(r"(?<=[.!?])\s+", event.body))
         for rule in self.filters["rules"]:
-            for pattern in rule["patterns"]:
-                result = re.search(pattern, text, re.I)
-                if result:
-                    matched = rule
-                    evidence = text[max(0, result.start() - 80) : result.end() + 220].strip()
+            for fragment in fragments:
+                if any_match(self.filters["speculation"], fragment):
+                    continue
+                for pattern in rule["patterns"]:
+                    result = re.search(pattern, fragment, re.I)
+                    if result:
+                        matched = rule
+                        evidence = fragment[
+                            max(0, result.start() - 80) : result.end() + 220
+                        ].strip()
+                        break
+                if matched:
                     break
             if matched:
                 break
