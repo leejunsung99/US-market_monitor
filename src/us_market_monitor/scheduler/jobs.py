@@ -61,7 +61,8 @@ class Radar:
         for event in sorted(events, key=lambda e: e.published_at):
             if self.stop.is_set():
                 raise Stopped()
-            if event.published_at < baseline or self.repo.seen(event):
+            self.classifier.prepare(event)
+            if event.published_at < baseline or self.repo.seen(event, self.classifier.version):
                 continue
             classified = self.classifier.classify(event)
             if classified is None:

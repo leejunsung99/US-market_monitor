@@ -1,4 +1,47 @@
 # Precision-first: a company name or topic keyword alone cannot pass.
+rules_version: '2026-10-13.1'
+review_retention_days: 7
+review_max_rows: 500
+score_weights:
+  current_action: 2
+  relevant_actor: 1
+  material_technology: 1
+  attributed_announcement: 1
+  official_source: 1
+  systemic_urgency: 3
+hard_exclusions:
+  - 'price target|target price|analyst rating|upgrades? to buy|downgrades? to|stock picks|stocks? to buy|sponsored|advertorial|worth buying|buy (on )?the dip'
+  - '\b(last year|last month|a year ago|previously announced|retrospective)\b|과거 발표|기존 발표 재조명'
+hard_speculation:
+  - '\b(rumou?rs?|reportedly|unconfirmed|in talks|in negotiations|negotiating|might|could|may|expected to|would)\b|루머|미확인|추측|협상 중'
+industry_topics:
+  semiconductor: '\b(DRAM|DDR[45]|LPDDR[56]X?|HBM[234]E?|RDIMM|NAND|memory.cell|memory chip|memory architecture|memory density|chip design|chip structure|chip architecture|AI accelerator|GPU|semiconductor process|[2346]F[²2])\b|반도체|디램|메모리.{0,8}(구조|밀도)|양산'
+industry_rules:
+  - type: semiconductor_technology
+    label: 반도체 기술 진전 발표
+    stage: technical_progress
+    patterns:
+      - '\b(announces?|announced|reports?|reported|unveils?|unveiled|discloses?|disclosed).{0,55}(progress|breakthrough|advance|denser|higher.density|new.{0,15}(architecture|design|structure))'
+      - '(기술|구조|공정).{0,20}(진전|돌파|개발 성공).{0,20}(발표|공개)'
+  - type: semiconductor_technology
+    label: 반도체 출시 계획 발표
+    stage: announced_plan
+    patterns:
+      - '\b(announces?|announced|unveils?|unveiled|confirms?|confirmed|discloses?|disclosed).{0,30}(plans? to|plans? for|launch schedule|roadmap)'
+      - '\b(says|said|states|stated).{0,35}(plans? to|will launch|will introduce|will release)'
+      - '(출시|양산).{0,15}(계획|일정).{0,20}(발표|공개|확정)'
+  - type: semiconductor_technology
+    label: 반도체 제품 출시
+    stage: launched
+    patterns:
+      - '\b(launches|launched|introduces|introduced|ships|shipped|begins shipping).{0,65}(new|next.generation|DDR5|HBM|DRAM|memory|GPU|AI accelerator)'
+      - '(신규|차세대).{0,20}(반도체|메모리|디램).{0,20}(출시|출하)'
+  - type: semiconductor_technology
+    label: 반도체 양산 시작
+    stage: mass_production
+    patterns:
+      - '\b(begins?|began|starts?|started|commences?|commenced|announces?|announced).{0,40}mass production'
+      - '(반도체|디램|메모리).{0,25}양산.{0,10}(시작|개시|발표)'
 high_threshold: 4
 critical_threshold: 7
 dedup_window_hours: 36

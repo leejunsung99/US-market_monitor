@@ -109,26 +109,36 @@ def main(argv=None):
         "--status", action="store_true", help="Show local collector/delivery status"
     )
     parser.add_argument(
+        "--review",
+        action="store_true",
+        help="Read short-lived filter review candidates and rejection counts",
+    )
+    parser.add_argument(
         "--root", type=Path, default=Path.cwd(), help="Project configuration directory"
     )
     parser.add_argument("--env-file", type=Path, help="Optional .env path")
     args = parser.parse_args(argv)
-    if args.dry_run and (args.test_telegram or args.status):
-        parser.error("--dry-run cannot be combined with --test-telegram or --status")
-    if args.test_telegram and args.status:
-        parser.error("--test-telegram cannot be combined with --status")
+    if args.dry_run and (args.test_telegram or args.status or args.review):
+        parser.error("--dry-run cannot be combined with delivery/status/review options")
+    if sum((args.test_telegram, args.status, args.review)) > 1:
+        parser.error("Choose only one of --test-telegram, --status, --review")
     repo = None
     stop = threading.Event()
     try:
         config = Config.load(args.root, args.env_file)
         setup_logging(config)
         db_path = config.data_dir / "radar.sqlite3"
-        if args.status:
+        if args.status or args.review:
             if not db_path.exists():
                 print(json.dumps({"status": "not_initialized"}))
                 return 0
             repo = Repository(db_path, readonly=True)
-            print(json.dumps(repo.status(), indent=2, ensure_ascii=False))
+            result = (
+                {"candidates": repo.reviews(), "filter_counts": repo.filter_report()}
+                if args.review
+                else repo.status()
+            )
+            print(json.dumps(result, indent=2, ensure_ascii=False))
             return 0
         config.data_dir.mkdir(parents=True, exist_ok=True)
         for sig in (signal.SIGINT, signal.SIGTERM):

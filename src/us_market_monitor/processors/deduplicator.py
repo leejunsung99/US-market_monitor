@@ -36,6 +36,10 @@ def material_facts(event, filters):
     update_signal = any(
         re.search(pattern, text, re.I) for pattern in filters["material_update_patterns"]
     )
+    event_stage = getattr(event, "event_stage", "")
+    if event_stage:
+        stages.append(event_stage)
+        update_signal = event_stage in {"announced_plan", "launched", "mass_production"}
     return {
         "amounts": sorted(set(amounts)),
         "stages": sorted(stages),
@@ -49,6 +53,16 @@ def meaningful_update(new_facts, old_facts):
     if not new_facts.get("update_signal"):
         return False
     new_stages, old_stages = set(new_facts["stages"]), set(old_facts["stages"])
+    industry_order = {
+        "technical_progress": 1,
+        "announced_plan": 2,
+        "launched": 3,
+        "mass_production": 4,
+    }
+    if new_stages & industry_order.keys() or old_stages & industry_order.keys():
+        return max((industry_order.get(stage, 0) for stage in new_stages), default=0) > max(
+            (industry_order.get(stage, 0) for stage in old_stages), default=0
+        )
     if new_stages - old_stages:
         return bool(new_stages & {"final", "expanded", "raised", "cut", "withdrawn", "amended"})
     return (
@@ -117,6 +131,7 @@ def same_story(event, row, filters):
         "tariff_policy",
         "emergency_policy",
         "production_disruption",
+        "semiconductor_technology",
     }
     if policy_type:
         # A missing jurisdiction cannot safely imply two distinct country policies are one.

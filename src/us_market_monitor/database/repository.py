@@ -41,7 +41,18 @@ CREATE TABLE IF NOT EXISTS event_identity (
   identity_hash TEXT PRIMARY KEY, event_id INTEGER NOT NULL REFERENCES events(id)
 );
 CREATE TABLE IF NOT EXISTS seen (
-  observation_hash TEXT PRIMARY KEY, observed_at TEXT NOT NULL
+  observation_hash TEXT PRIMARY KEY, observed_at TEXT NOT NULL, rules_version TEXT NOT NULL DEFAULT ''
+);
+CREATE TABLE IF NOT EXISTS review_candidates (
+  observation_hash TEXT PRIMARY KEY, source TEXT NOT NULL, source_url TEXT NOT NULL,
+  title TEXT NOT NULL, evidence TEXT NOT NULL, published_at TEXT NOT NULL,
+  reason TEXT NOT NULL, score REAL NOT NULL, rules_version TEXT NOT NULL,
+  expires_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ix_review_expiry ON review_candidates(expires_at);
+CREATE TABLE IF NOT EXISTS filter_counts (
+  day TEXT NOT NULL, source TEXT NOT NULL, reason TEXT NOT NULL, rules_version TEXT NOT NULL,
+  count INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(day,source,reason,rules_version)
 );
 """
 
@@ -58,6 +69,25 @@ class Repository:
         else:
             self.db.execute("PRAGMA journal_mode=WAL")
             self.db.executescript(SCHEMA)
+            # Additive migration preserves existing events, baselines and delivery states.
+            event_columns = {row[1] for row in self.db.execute("PRAGMA table_info(events)")}
+            for name, declaration in {
+                "event_stage": "TEXT NOT NULL DEFAULT ''",
+                "evidence_level": "TEXT NOT NULL DEFAULT ''",
+                "actor": "TEXT NOT NULL DEFAULT ''",
+                "impact_tickers": "TEXT NOT NULL DEFAULT '[]'",
+                "importance_score": "REAL NOT NULL DEFAULT 0",
+                "score_breakdown": "TEXT NOT NULL DEFAULT '{}'",
+            }.items():
+                if name not in event_columns:
+                    self.db.execute(f"ALTER TABLE events ADD COLUMN {name} {declaration}")
+            if "rules_version" not in {
+                row[1] for row in self.db.execute("PRAGMA table_info(seen)")
+            }:
+                self.db.execute(
+                    "ALTER TABLE seen ADD COLUMN rules_version TEXT NOT NULL DEFAULT ''"
+                )
+            self.db.commit()
 
     def close(self):
         self.db.close()
@@ -106,22 +136,67 @@ class Repository:
             )
         return event.observation_hash
 
-    def seen(self, event):
-        return (
-            self.db.execute(
-                "SELECT 1 FROM seen WHERE observation_hash=?", (self.observation_key(event),)
-            ).fetchone()
-            is not None
+    def seen(self, event, rules_version=None):
+        version = (
+            rules_version if rules_version is not None else event.metadata.get("rules_version")
         )
+        query = "SELECT 1 FROM seen WHERE observation_hash=?"
+        values = [self.observation_key(event)]
+        if version is not None:
+            query += " AND rules_version=?"
+            values.append(version)
+        return self.db.execute(query, values).fetchone() is not None
 
     def discard(self, event):
         with self.db:
+            already_seen = self.seen(event)
             self._remember(event)
+            decision = event.metadata.get("classification_decision", {})
+            if decision and not already_seen:
+                self.db.execute(
+                    "INSERT INTO filter_counts VALUES(?,?,?,?,1) "
+                    "ON CONFLICT(day,source,reason,rules_version) DO UPDATE SET count=count+1",
+                    (
+                        utcnow().date().isoformat(),
+                        event.source,
+                        decision["reason"],
+                        decision["rules_version"],
+                    ),
+                )
+            if decision.get("status") == "review":
+                retention = event.metadata.get("review_retention_days", 7)
+                self.db.execute(
+                    "INSERT OR REPLACE INTO review_candidates VALUES(?,?,?,?,?,?,?,?,?,?)",
+                    (
+                        self.observation_key(event),
+                        event.source,
+                        event.source_url,
+                        event.title[:350],
+                        decision.get("evidence", event.summary)[:700],
+                        event.published_at.isoformat(),
+                        decision["reason"],
+                        decision.get("score", 0),
+                        decision["rules_version"],
+                        (utcnow() + timedelta(days=retention)).isoformat(),
+                    ),
+                )
+                maximum = event.metadata.get("review_max_rows", 500)
+                self.db.execute(
+                    "DELETE FROM review_candidates WHERE observation_hash IN "
+                    "(SELECT observation_hash FROM review_candidates ORDER BY expires_at DESC "
+                    "LIMIT -1 OFFSET ?)",
+                    (maximum,),
+                )
 
     def _remember(self, event):
         self.db.execute(
-            "INSERT OR IGNORE INTO seen VALUES(?,?)",
-            (self.observation_key(event), utcnow().isoformat()),
+            "INSERT INTO seen(observation_hash,observed_at,rules_version) VALUES(?,?,?) "
+            "ON CONFLICT(observation_hash) DO UPDATE SET rules_version=excluded.rules_version",
+            (
+                self.observation_key(event),
+                utcnow().isoformat(),
+                event.metadata.get("rules_version", ""),
+            ),
         )
 
     def ingest(self, event, filters):
@@ -187,6 +262,23 @@ class Repository:
                 return None
             event_id = row.lastrowid
             self.db.execute(
+                "UPDATE events SET event_stage=?,evidence_level=?,actor=?,impact_tickers=?,"
+                "importance_score=?,score_breakdown=? WHERE id=?",
+                (
+                    event.event_stage,
+                    event.evidence_level,
+                    event.actor,
+                    json.dumps(event.impact_tickers),
+                    event.importance_score,
+                    json.dumps(event.score_breakdown),
+                    event_id,
+                ),
+            )
+            self.db.execute(
+                "DELETE FROM review_candidates WHERE observation_hash=?",
+                (self.observation_key(event),),
+            )
+            self.db.execute(
                 "INSERT INTO notifications(event_id,status,next_attempt_at) VALUES(?,'pending',?)",
                 (event_id, utcnow().isoformat()),
             )
@@ -201,6 +293,9 @@ class Repository:
 
     @staticmethod
     def row_event(row):
+        def optional(name, default):
+            return row[name] if name in row.keys() else default
+
         return Event(
             row["source"],
             row["source_event_id"],
@@ -215,6 +310,12 @@ class Repository:
             entity_key=row["entity_key"],
             industry=row["industry"],
             reason=row["reason"],
+            event_stage=optional("event_stage", ""),
+            evidence_level=optional("evidence_level", ""),
+            actor=optional("actor", ""),
+            impact_tickers=tuple(json.loads(optional("impact_tickers", "[]"))),
+            importance_score=optional("importance_score", 0),
+            score_breakdown=json.loads(optional("score_breakdown", "{}")),
         )
 
     def recover_inflight(self):
@@ -286,6 +387,31 @@ class Repository:
                 "DELETE FROM seen WHERE observed_at<?",
                 ((utcnow() - timedelta(days=30)).isoformat(),),
             )
+            self.db.execute(
+                "DELETE FROM review_candidates WHERE expires_at<=?", (utcnow().isoformat(),)
+            )
+            self.db.execute(
+                "DELETE FROM filter_counts WHERE day<?",
+                ((utcnow() - timedelta(days=30)).date().isoformat(),),
+            )
+
+    def reviews(self, limit=20):
+        return [
+            dict(row)
+            for row in self.db.execute(
+                "SELECT source,title,evidence,source_url,published_at,reason,score,rules_version,expires_at "
+                "FROM review_candidates WHERE expires_at>? ORDER BY score DESC,published_at DESC LIMIT ?",
+                (utcnow().isoformat(), limit),
+            )
+        ]
+
+    def filter_report(self):
+        return [
+            dict(row)
+            for row in self.db.execute(
+                "SELECT day,reason,sum(count) AS count FROM filter_counts GROUP BY day,reason ORDER BY day DESC,count DESC"
+            )
+        ]
 
     def status(self):
         return {

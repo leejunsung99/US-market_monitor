@@ -11,7 +11,7 @@ class Summarizer(Protocol):
 
 class RuleSummarizer:
     def summarize(self, event: Event) -> tuple[str, str]:
-        actor = ", ".join(event.related_tickers)
+        actor = event.actor or ", ".join(event.related_tickers)
         title = f"{actor + ' · ' if actor else ''}{event.reason}"
         # Korean category is rule-derived. Factual details remain a source quotation
         # rather than an unsupported machine translation.

@@ -50,6 +50,9 @@ notepad .env
 # 실행 중에도 조회 가능한 읽기 전용 상태 출력
 .\.venv\Scripts\python.exe main.py --status
 
+# 중요도 검토 후보(알람 미발송)와 제외 이유 집계
+.\.venv\Scripts\python.exe main.py --review
+
 # 뉴스 저장·발송 없이 공식 소스 실제 연결 및 파싱 점검
 .\.venv\Scripts\python.exe scripts/check_sources.py
 ```
@@ -80,6 +83,18 @@ notepad .env
 SEC는 `data.sec.gov/submissions/CIK##########.json`을 사용합니다. [SEC API 문서](https://www.sec.gov/search-filings/edgar-application-programming-interfaces), [접근 정책](https://www.sec.gov/search-filings/edgar-search-assistance/accessing-edgar-data), [연준 RSS 목록](https://www.federalreserve.gov/feeds/feeds.htm), [Finnhub 시장 뉴스](https://finnhub.io/docs/api/market-news), [기업 뉴스](https://finnhub.io/docs/api/company-news), [호출 제한](https://finnhub.io/docs/api/rate-limit), [Telegram Bot API](https://core.telegram.org/bots/api#sendmessage)를 기준으로 구현했습니다.
 
 `settings/watchlist.yaml`에서 회사명 별칭·종목·산업을 바꿀 수 있습니다. `settings/filters.yaml`에서 사건별 정규식, 제외·추측 표현, 중요도 임계값, 대규모 거래 기준과 중복 판정 창을 조절할 수 있습니다. 설정 변경은 프로세스를 재시작하면 적용됩니다.
+
+### 산업 사건·경쟁관계와 검토함
+
+`settings/industry_relations.yaml`은 CXMT·YMTC·삼성전자·SK하이닉스·SMIC와 관심 종목의 **감시용 경쟁관계**를 관리합니다. 관계 목록은 수집 대상 티커를 늘리는 설정이 아니라, 수집된 기사에서 관심 목록 밖 경쟁사를 인식하는 설정입니다. 현재 수집 API에 없는 기사를 새로 확보하는 기능은 아닙니다.
+
+반도체 규칙에는 DRAM·DDR5·LPDDR·HBM·NAND·4F² 메모리 셀 구조 및 밀도, GPU·AI 가속기 등을 포함합니다. 기술 진전 발표, 출시 계획 발표, 실제 출시, 양산 시작을 각각 구분하며, 회사의 발표·발언을 인용한 근거가 있는 계획만 중요 후보로 승인합니다. 기사에 등장하는 계획·예상 문구만으로 출시나 양산 완료를 판단하지 않습니다. 단순 하락 설명 제목이어도 같은 문장 안에 회사 주체·기술·새 발표 근거가 있으면 해당 사건을 추출할 수 있습니다. 광고·매수 추천·목표주가·회고·루머는 계속 제외합니다.
+
+중요도는 현재 사건 근거, 관련 주체, 기술 중요성, 발표 인용, 공식 출처와 긴급성 점수를 합산합니다. 점수 가중치·HIGH/CRITICAL 임계값은 `filters.yaml`에 있습니다. 기술 발표·출시 계획은 기본 HIGH이며 주가 하락 표현만으로 CRITICAL로 올리지 않습니다. 알람에는 사건 단계와 확인 근거를 표시하고, 원문에서 언급된 종목과 설정된 경쟁관계의 관찰 대상을 구분합니다. 언론 보도의 회사 발표 인용은 공식 원문을 독립 검증한 것으로 표시하지 않습니다.
+
+확신이 부족한 산업 후보는 별도 `review_candidates` 테이블에 제목 350자·근거 발췌 700자·출처·판정 이유를 **기본 7일, 최대 500건**만 보관합니다. 검토 후보는 `events`나 Telegram 발송 큐에 들어가지 않습니다. 일반 기사는 여전히 본문 없이 해시만 남기고, 제외 이유의 건수만 30일 보관합니다. `--review`로 유효한 후보와 제외 이유를 조회할 수 있으며, 이 조회는 실행 중에도 가능합니다.
+
+규칙·별칭·경쟁관계의 내용으로 버전 해시를 만들므로 설정 변경 후 재시작하면 기존 관측 해시를 새 규칙으로 다시 평가할 수 있습니다. 발송 사건의 지속적인 중복 검사는 유지하며 최초 시작 기준점 이전 기사까지 자동으로 소급 전송하지 않습니다. 검토 후보나 새 키워드가 기준을 자동 변경하지는 않습니다. 후보 검토 → 규칙/관계 수정 → 회귀 테스트 → 재시작 순서로 최신화합니다. 실제 주가 반응에 대한 수치 검증, 매체 간 독립적인 사실 확인, 규칙의 자동 학습은 구현하지 않았습니다.
 
 일반 주가 설명·목표주가·홍보·회고·루머를 먼저 제외한 뒤, **실제 발표·결정·수정·계약·중단을 나타내는 사건 근거**와 관련 기업·정책 주체를 함께 확인합니다. 기업 뉴스 API의 조회 종목만으로 관련 기업을 표시하지 않습니다. 인수·투자는 기본 10억 달러 이상 또는 원문에 명시된 대규모·전략적 거래 근거를 요구합니다. 핵심 GPU/반도체 기술 출시도 구체적인 차세대 기술 발표 근거가 필요합니다.
 
@@ -167,6 +182,7 @@ pyproject.toml / requirements.txt
 .env.example / .gitignore
 settings/watchlist.yaml          # 37개 기본 관심 기업과 별칭·산업
 settings/filters.yaml            # 사건 규칙·임계값·중복 설정
+settings/industry_relations.yaml # 관심 종목 밖 경쟁사와 산업 관계
 src/us_market_monitor/
   config.py / http.py / main.py / __main__.py
   collectors/sec.py / fed.py / finnhub.py
@@ -190,7 +206,7 @@ data/ / logs/                   # 로컬 런타임 파일, Git 제외
 .\.venv\Scripts\python.exe -m pip check
 ```
 
-로컬 Windows / Python 3.12에서 **92개 테스트 통과**, Ruff 정적 검사와 `pip check` 통과. 초기 87개 테스트는 GitHub CI의 Windows/Ubuntu × Python 3.11/3.12/3.13 조합도 모두 통과했습니다. 상세 결과와 실제 API 검증 범위는 [docs/VALIDATION.md](docs/VALIDATION.md)에 기록했습니다. 테스트는 외부 네트워크나 실제 Telegram 전송을 사용하지 않습니다. 외부 수집 성공은 별도의 실연동 점검 결과로만 보고합니다.
+로컬 Windows / Python 3.12에서 **115개 테스트 통과**, Ruff 정적 검사와 `pip check` 통과. 초기 테스트는 GitHub CI의 Windows/Ubuntu × Python 3.11/3.12/3.13 조합도 모두 통과했습니다. 상세 결과와 실제 API 검증 범위는 [docs/VALIDATION.md](docs/VALIDATION.md)에 기록했습니다. 테스트는 외부 네트워크나 실제 Telegram 전송을 사용하지 않습니다. 외부 수집 성공은 별도의 실연동 점검 결과로만 보고합니다.
 
 ## 공개 저장소와 비밀 설정
 

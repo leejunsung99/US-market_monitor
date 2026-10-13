@@ -18,7 +18,11 @@ def filters():
 
 @pytest.fixture
 def watchlist():
-    return yaml.safe_load((ROOT / "settings/watchlist.yaml").read_text(encoding="utf-8"))
+    data = yaml.safe_load((ROOT / "settings/watchlist.yaml").read_text(encoding="utf-8"))
+    data["industry_actors"] = yaml.safe_load(
+        (ROOT / "settings/industry_relations.yaml").read_text(encoding="utf-8")
+    )["actors"]
+    return data
 
 
 @pytest.fixture

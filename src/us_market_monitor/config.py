@@ -72,6 +72,14 @@ class Config:
             filters = yaml.safe_load(
                 path("FILTERS_PATH", "settings/filters.yaml").read_text(encoding="utf-8")
             )
+            relations_path = path("RELATIONS_PATH", "settings/industry_relations.yaml")
+            # Existing custom two-file configurations remain valid. The bundled project
+            # has this file; set RELATIONS_PATH explicitly when using a custom root.
+            relations = (
+                yaml.safe_load(relations_path.read_text(encoding="utf-8"))
+                if relations_path.exists()
+                else {"actors": {}}
+            )
         except (OSError, yaml.YAMLError):
             raise ConfigError("Unable to read watchlist/filter YAML files") from None
         if not isinstance(watchlist, dict) or not isinstance(watchlist.get("companies"), dict):
@@ -87,7 +95,28 @@ class Config:
                 raise ConfigError("Each company requires a nonempty industry")
         if not isinstance(filters, dict) or not isinstance(filters.get("rules"), list):
             raise ConfigError("filters requires a rules list")
-        for rule in filters["rules"]:
+        if not isinstance(relations, dict) or not isinstance(relations.get("actors"), dict):
+            raise ConfigError("industry relations requires an actors mapping")
+        for actor, info in relations["actors"].items():
+            if not isinstance(actor, str) or not isinstance(info, dict):
+                raise ConfigError("Invalid industry actor")
+            if (
+                not isinstance(info.get("aliases"), list)
+                or not info["aliases"]
+                or not all(isinstance(alias, str) and alias.strip() for alias in info["aliases"])
+            ):
+                raise ConfigError("Industry actors require nonempty aliases")
+            if not isinstance(info.get("industry"), str) or not isinstance(
+                info.get("watch_tickers"), list
+            ):
+                raise ConfigError("Industry actors require industry and watch_tickers")
+            if not all(
+                isinstance(t, str) and re.fullmatch(r"[A-Z][A-Z0-9.-]{0,9}", t)
+                for t in info["watch_tickers"]
+            ):
+                raise ConfigError("Invalid related watch ticker")
+        watchlist["industry_actors"] = relations["actors"]
+        for rule in [*filters["rules"], *filters.get("industry_rules", [])]:
             if not isinstance(rule, dict) or not {"type", "label", "patterns"} <= rule.keys():
                 raise ConfigError("Each filter rule requires type, label and patterns")
             if not isinstance(rule["patterns"], list):
@@ -103,12 +132,33 @@ class Config:
             "critical_patterns",
             "material_update_patterns",
             "material_scale_patterns",
+            "hard_exclusions",
+            "hard_speculation",
         ):
             try:
                 for pattern in filters.get(name, []):
                     re.compile(pattern, re.I)
             except (re.error, TypeError):
                 raise ConfigError(f"Invalid {name} expression") from None
+        try:
+            for pattern in filters.get("industry_topics", {}).values():
+                re.compile(pattern, re.I)
+        except (re.error, TypeError, AttributeError):
+            raise ConfigError("Invalid industry topic expression") from None
+        for weight in filters.get("score_weights", {}).values():
+            if (
+                not isinstance(weight, (int, float))
+                or not math.isfinite(weight)
+                or not 0 <= weight <= 10
+            ):
+                raise ConfigError("Invalid score weight")
+        for setting, default, maximum in (
+            ("review_retention_days", 7, 30),
+            ("review_max_rows", 500, 5000),
+        ):
+            value = filters.get(setting, default)
+            if not isinstance(value, int) or not 1 <= value <= maximum:
+                raise ConfigError(f"Invalid {setting}")
         for name, low, high in (
             ("high_threshold", 1, 10),
             ("critical_threshold", 1, 10),

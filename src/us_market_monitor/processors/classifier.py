@@ -1,8 +1,10 @@
+import json
 import re
 from datetime import timedelta
 
 from us_market_monitor.database.models import Event, utcnow
-from us_market_monitor.processors.normalizer import canonical_url, plain_text
+from us_market_monitor.processors.industry import IndustryRules
+from us_market_monitor.processors.normalizer import canonical_url, digest, plain_text
 
 
 def any_match(patterns, text):
@@ -15,8 +17,104 @@ class Classifier:
     def __init__(self, watchlist, filters):
         self.companies = watchlist["companies"]
         self.filters = filters
+        self.industry_rules = IndustryRules(watchlist, filters)
+        signature = json.dumps({"filters": filters, "watchlist": watchlist}, sort_keys=True)
+        self.version = str(filters.get("rules_version", "legacy")) + ":" + digest(signature)[:12]
+
+    def prepare(self, event):
+        event.metadata["rules_version"] = self.version
+        event.metadata["review_retention_days"] = self.filters.get("review_retention_days", 7)
+        event.metadata["review_max_rows"] = self.filters.get("review_max_rows", 500)
+
+    def _decision(self, event, status, reason, **details):
+        event.metadata["classification_decision"] = {
+            "status": status,
+            "reason": reason,
+            "rules_version": self.version,
+            **details,
+        }
+        return event if status == "approve" else None
 
     def classify(self, event: Event) -> Event | None:
+        self.prepare(event)
+        if not event.title.strip() or not event.source.strip():
+            return self._decision(event, "reject", "missing_source_metadata")
+        try:
+            event.source_url = canonical_url(event.source_url)
+        except ValueError:
+            return self._decision(event, "reject", "invalid_source_url")
+        if event.published_at > utcnow() + timedelta(minutes=5):
+            return self._decision(event, "reject", "future_publication")
+        headline, summary = plain_text(event.title), plain_text(event.summary)
+        focus = headline + ". " + summary
+        if any_match(self.filters.get("hard_exclusions", []), focus):
+            return self._decision(event, "reject", "promotion_or_historical_content")
+        fragments = [headline, *re.split(r"(?<=[.!?])\s+", summary)]
+        if event.metadata.get("official"):
+            fragments.extend(re.split(r"(?<=[.!?])\s+", event.body))
+        industry = self.industry_rules.assess(event, fragments)
+        if industry and industry["status"] == "approve":
+            event.priority = "HIGH"
+            event.event_type = industry["rule"]["type"]
+            event.reason = industry["rule"]["label"]
+            event.event_stage = industry["rule"]["stage"]
+            event.evidence_level = industry["confidence"]
+            event.actor = industry["actor"]
+            event.impact_tickers = industry["impact_tickers"]
+            event.importance_score = industry["score"]
+            event.score_breakdown = industry["score_breakdown"]
+            event.industry = industry["industry"]
+            event.entity_key = event.actor + ":" + industry["family"]
+            # Relationship targets are never mislabeled as mentioned source tickers.
+            evidence_text = industry["evidence"]
+            event.related_tickers = tuple(
+                sorted(
+                    t
+                    for t, info in self.companies.items()
+                    if any(
+                        re.search(r"(?<!\w)" + re.escape(alias) + r"(?!\w)", evidence_text, re.I)
+                        for alias in info["aliases"]
+                    )
+                    or (
+                        len(t) >= 4
+                        and re.search(r"(?<!\w)" + re.escape(t) + r"(?!\w)", evidence_text, re.I)
+                    )
+                )
+            )
+            event.summary = industry["evidence"]
+            return self._decision(
+                event,
+                "approve",
+                industry["reason"],
+                score=event.importance_score,
+                stage=event.event_stage,
+                score_breakdown=event.score_breakdown,
+            )
+        approved = self._classify_legacy(event)
+        if approved:
+            return self._decision(
+                event,
+                "approve",
+                "material_current_action",
+                score=event.importance_score,
+                score_breakdown=event.score_breakdown,
+            )
+        if industry:
+            return self._decision(
+                event,
+                "review",
+                industry["reason"],
+                score=industry["score"],
+                evidence=industry["evidence"],
+            )
+        reason = "no_material_action_or_tracked_actor"
+        if any_match(self.filters["exclusions"], headline):
+            reason = "routine_headline"
+        elif any_match(self.filters["speculation"], headline):
+            reason = "speculative_headline"
+        return self._decision(event, "reject", reason)
+
+    def _classify_legacy(self, event: Event) -> Event | None:
         if not event.title.strip() or not event.source.strip():
             return None
         try:
@@ -114,9 +212,14 @@ class Classifier:
             if not authority:
                 return None
         # A current action pattern is mandatory; specificity and source establish importance.
-        score = 4
+        weights = self.filters.get("score_weights", {})
+        parts = {
+            "current_action": weights.get("current_action", 2),
+            "relevant_actor": weights.get("relevant_actor", 1),
+            "material_event": weights.get("material_technology", 1),
+        }
         if event.metadata.get("official"):
-            score += 1
+            parts["official_source"] = weights.get("official_source", 1)
         critical = any_match(self.filters["critical_patterns"], focus)
         if matched["type"] in {"emergency_policy", "geopolitical"}:
             critical = True
@@ -125,10 +228,16 @@ class Classifier:
         ):
             critical = True
         if critical:
-            score += 3
+            parts["systemic_urgency"] = weights.get("systemic_urgency", 3)
+        score = sum(parts.values())
         if score < self.filters["high_threshold"]:
             return None
         event.priority = "CRITICAL" if score >= self.filters["critical_threshold"] else "HIGH"
+        event.importance_score = score
+        event.score_breakdown = parts
+        event.evidence_level = (
+            "official_source" if event.metadata.get("official") else "reported_action"
+        )
         event.event_type = matched["type"]
         event.reason = matched["label"]
         event.related_tickers = tuple(sorted(tickers))

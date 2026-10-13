@@ -1,0 +1,27 @@
+# These are monitoring relationships, not factual claims that each event affects a ticker.
+actors:
+  CXMT:
+    aliases: [CXMT, ChangXin Memory Technologies, ChangXin, 창신메모리, 창신 메모리]
+    industry: AI·반도체·장비
+    segment: memory
+    watch_tickers: [MU]
+  YMTC:
+    aliases: [YMTC, Yangtze Memory Technologies, Yangtze Memory, 양쯔메모리]
+    industry: AI·반도체·장비
+    segment: memory
+    watch_tickers: [MU]
+  SAMSUNG:
+    aliases: [Samsung Electronics, 삼성전자]
+    industry: AI·반도체·장비
+    segment: memory
+    watch_tickers: [MU]
+  SK_HYNIX:
+    aliases: [SK Hynix, SK하이닉스]
+    industry: AI·반도체·장비
+    segment: memory
+    watch_tickers: [MU]
+  SMIC:
+    aliases: [SMIC, Semiconductor Manufacturing International, 중신국제]
+    industry: AI·반도체·장비
+    segment: foundry
+    watch_tickers: [TSM]

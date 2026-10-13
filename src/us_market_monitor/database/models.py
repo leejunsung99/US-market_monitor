@@ -24,6 +24,12 @@ class Event:
     industry: str = ""
     reason: str = ""
     observation_hash: str = ""
+    event_stage: str = ""
+    evidence_level: str = ""
+    actor: str = ""
+    impact_tickers: tuple[str, ...] = ()
+    importance_score: float = 0
+    score_breakdown: dict = field(default_factory=dict)
 
     def __post_init__(self):
         for name in ("published_at", "detected_at"):

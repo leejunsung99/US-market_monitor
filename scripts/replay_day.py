@@ -104,6 +104,7 @@ def collect(config, repo, date, stop):
             events = collector.collect(start, {})
             counts["fetched"] += len(events)
             for event in sorted(events, key=lambda item: item.published_at):
+                classifier.prepare(event)
                 if not start <= event.published_at <= end or repo.seen(event):
                     continue
                 counts["in_window"] += 1
