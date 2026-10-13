@@ -10,9 +10,11 @@ score_weights:
   official_source: 1
   systemic_urgency: 3
 hard_exclusions:
+  - '\bis .{0,90}(right to|worth buying|a buy)\b|should investors|매수해야 할까'
   - 'price target|target price|analyst rating|upgrades? to buy|downgrades? to|stock picks|stocks? to buy|sponsored|advertorial|worth buying|buy (on )?the dip'
   - '\b(last year|last month|a year ago|previously announced|retrospective)\b|과거 발표|기존 발표 재조명'
 hard_speculation:
+  - '\b(in discussions?|discussing an acquisition|seeks to acquire)\b'
   - '\b(rumou?rs?|reportedly|unconfirmed|in talks|in negotiations|negotiating|might|could|may|expected to|would)\b|루머|미확인|추측|협상 중'
 industry_topics:
   semiconductor: '\b(DRAM|DDR[45]|LPDDR[56]X?|HBM[234]E?|RDIMM|NAND|memory.cell|memory chip|memory architecture|memory density|chip design|chip structure|chip architecture|AI accelerator|GPU|semiconductor process|[2346]F[²2])\b|반도체|디램|메모리.{0,8}(구조|밀도)|양산'
@@ -55,6 +57,7 @@ exclusions:
   - '목표주가|추천주|주가가 오른 이유|협찬|광고성'
   - '\b(last year|last month|a year ago|previously announced|retrospective)\b|과거 발표|기존 발표 재조명'
 speculation:
+  - '\b(in discussions?|discussing an acquisition|seeks to acquire)\b'
   - '\b(could|may|might|rumou?r|reportedly|weighs|considers|considering|expected to|plans to|in talks|in negotiations|negotiating|preview|opinion|analysis|what to expect|would)\b'
   - '검토 중|가능할까|전망한다|예상된다|루머|추측'
 critical_patterns:
