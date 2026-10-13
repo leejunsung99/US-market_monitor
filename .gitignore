@@ -1,0 +1,38 @@
+# Local environment and credentials
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+credentials*.json
+service-account*.json
+.aws/
+.codex/
+.agents/
+
+# Python
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+build/
+dist/
+
+# Local runtime data
+data/
+logs/
+*.log
+*.sqlite
+*.sqlite3
+*.db
+
+# Editor and OS files
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
