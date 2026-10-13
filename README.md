@@ -154,7 +154,7 @@ Python은 3.11 이상이어야 합니다. 다른 설치 경로·사용자·데�
 main.py                         # 실행 진입점
 pyproject.toml / requirements.txt
 .env.example / .gitignore
-settings/watchlist.yaml          # 24개 기본 관심 기업과 별칭·산업
+settings/watchlist.yaml          # 37개 기본 관심 기업과 별칭·산업
 settings/filters.yaml            # 사건 규칙·임계값·중복 설정
 src/us_market_monitor/
   config.py / http.py / main.py / __main__.py
