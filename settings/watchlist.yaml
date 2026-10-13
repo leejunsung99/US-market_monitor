@@ -1,0 +1,26 @@
+companies:
+  AAPL: {aliases: [Apple, 애플], industry: 빅테크}
+  MSFT: {aliases: [Microsoft, 마이크로소프트], industry: 빅테크}
+  GOOGL: {aliases: [Alphabet, Google, 알파벳, 구글], industry: 빅테크}
+  AMZN: {aliases: [Amazon, 아마존], industry: 빅테크}
+  META: {aliases: [Meta Platforms, Meta, 메타], industry: 빅테크}
+  TSLA: {aliases: [Tesla, 테슬라], industry: 빅테크}
+  NVDA: {aliases: [NVIDIA, Nvidia, 엔비디아], industry: AI·반도체}
+  AMD: {aliases: [Advanced Micro Devices, AMD], industry: AI·반도체}
+  AVGO: {aliases: [Broadcom, 브로드컴], industry: AI·반도체}
+  INTC: {aliases: [Intel, 인텔], industry: AI·반도체}
+  MU: {aliases: [Micron, 마이크론], industry: AI·반도체}
+  TSM: {aliases: [Taiwan Semiconductor, TSMC], industry: AI·반도체}
+  ASML: {aliases: [ASML], industry: AI·반도체}
+  ORCL: {aliases: [Oracle, 오라클], industry: 소프트웨어·인프라}
+  PLTR: {aliases: [Palantir, 팔란티어], industry: 소프트웨어·인프라}
+  CRM: {aliases: [Salesforce, 세일즈포스], industry: 소프트웨어·인프라}
+  JPM: {aliases: [JPMorgan, JP Morgan], industry: 금융}
+  BAC: {aliases: [Bank of America], industry: 금융}
+  GS: {aliases: [Goldman Sachs], industry: 금융}
+  MS: {aliases: [Morgan Stanley], industry: 금융}
+  LLY: {aliases: [Eli Lilly], industry: 헬스케어}
+  UNH: {aliases: [UnitedHealth], industry: 헬스케어}
+  JNJ: {aliases: [Johnson & Johnson], industry: 헬스케어}
+  XOM: {aliases: [Exxon Mobil, ExxonMobil], industry: 에너지}
+  CVX: {aliases: [Chevron], industry: 에너지}

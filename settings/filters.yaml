@@ -1,0 +1,99 @@
+# Precision-first: a company name or topic keyword alone cannot pass.
+high_threshold: 4
+critical_threshold: 7
+dedup_window_hours: 36
+dedup_similarity: 0.62
+minimum_deal_usd: 1000000000
+material_scale_patterns:
+  - '\b(major|landmark|strategic|giant|mega|transformative)\b|대규모|핵심 사업'
+exclusions:
+  - 'price target|target price|analyst rating|upgrades? to buy|downgrades? to|stock picks|stocks? to buy|sponsored|advertorial'
+  - 'why .{0,60}(stock|shares)|shares? (rise|fall|gain|drop)|stock market (today|live)|market wrap|weekly recap'
+  - '목표주가|추천주|주가가 오른 이유|협찬|광고성'
+  - '\b(last year|last month|a year ago|previously announced|retrospective)\b|과거 발표|기존 발표 재조명'
+speculation:
+  - '\b(could|may|might|rumou?r|reportedly|weighs|considers|considering|expected to|plans to|in talks|preview|opinion|analysis|what to expect|would)\b'
+  - '검토 중|가능할까|전망한다|예상된다|루머|추측'
+critical_patterns:
+  - 'emergency|unscheduled|unexpected|surprise|slashed|withdraws.{0,30}(guidance|outlook)|긴급|예상 밖'
+material_update_patterns:
+  - 'revises|revised|raises|cuts|withdraws|finalizes|finalised|finalized|expands|expanded|doubles|amends|amended|정정|수정|확정|확대'
+rules:
+  - type: monetary_policy
+    label: 통화정책 발표
+    entity: federal_reserve
+    scope: policy
+    patterns:
+      - '(federal reserve|fomc|fed|연준).{0,90}(issues.{0,15}statement|raises.{0,25}rates|cuts.{0,25}rates|holds.{0,25}rates|announces.{0,30}(policy|liquidity|facility)|금리.{0,12}(결정|인하|인상))'
+  - type: export_restriction
+    label: 수출규제 발표
+    entity: export_controls
+    scope: policy
+    patterns:
+      - '(announces|imposes|enacts|expands|finalizes|발표|확정|시행|확대).{0,80}(export (controls?|restrictions?|ban)|수출.{0,12}(규제|제한))'
+      - '(export (controls?|restrictions?|ban)|수출.{0,12}(규제|제한)).{0,60}(announced|imposed|expanded|finalized|발표|확정|시행)'
+  - type: tariff_policy
+    label: 관세·무역 정책 발표
+    entity: trade_policy
+    scope: policy
+    patterns:
+      - '(announces|imposes|enacts|signs|raises|cuts|발표|확정|시행).{0,80}(tariffs?|trade restrictions?|관세)'
+  - type: emergency_policy
+    label: 금융시장 긴급 조치
+    entity: financial_stability
+    scope: policy
+    patterns:
+      - '(announces|activates|approves|launches).{0,80}(emergency (lending|liquidity|bailout)|bank rescue|financial stability facility)'
+  - type: fiscal_policy
+    label: 재정·산업 정책 발표
+    entity: fiscal_policy
+    scope: policy
+    patterns:
+      - '(government|congress|president|treasury).{0,70}(signs|enacts|approves).{0,70}(billion|trillion).{0,50}(stimulus|industrial|funding|spending)'
+  - type: geopolitical
+    label: 지정학·에너지 공급 사건
+    entity: global_supply
+    scope: global
+    patterns:
+      - '(closes|blocks|shuts|halts).{0,50}(strait of hormuz|suez canal|oil exports|gas exports)'
+      - '(opec|oil producer).{0,60}(announces|agrees).{0,40}(production cut|output cut)'
+  - type: earnings_guidance
+    label: 실적 전망 변경
+    scope: company
+    patterns:
+      - '(raises|cuts|slashes|withdraws|revises|updates|lowers|boosts).{0,40}(guidance|earnings outlook|revenue outlook|profit forecast|annual forecast)'
+      - '(실적|매출|이익).{0,20}전망.{0,12}(상향|하향|철회|수정)'
+  - type: earnings
+    label: 실적 발표
+    scope: company
+    patterns:
+      - '(reports|announces|releases|posts).{0,60}(quarterly (results|earnings|revenue)|financial results|record (revenue|profit)|earnings beat|earnings miss)'
+      - '실적.{0,15}(발표|예상 상회|예상 하회)'
+  - type: acquisition
+    label: 인수합병 발표
+    scope: company
+    patterns:
+      - '(agrees to acquire|will acquire|acquires|to acquire|completes acquisition|signs.{0,25}merger|merger agreement)'
+      - '인수.{0,12}(합의|계약|완료)|합병.{0,12}(확정|계약)'
+  - type: contract_investment
+    label: 대규모 계약·투자 발표
+    scope: company
+    patterns:
+      - '(signs|wins|secures|announces|invests|commits).{0,100}(billion|trillion|multi-billion).{0,60}(contract|deal|investment|factory|plant|data cent(er|re))'
+      - '(signs|wins|secures).{0,40}(contract|deal).{0,40}(billion|trillion)'
+  - type: production_disruption
+    label: 생산·공급 차질
+    scope: company
+    patterns:
+      - '(halts|suspends|shuts down|stops|cuts).{0,55}(production|manufacturing|major factory|chip supply)'
+      - '생산.{0,12}(중단|대규모 감산)|공급망.{0,10}마비'
+  - type: legal_regulatory
+    label: 중대 법적·규제 조치
+    scope: company
+    patterns:
+      - '(court|regulator|justice department|ftc|fda|government).{0,60}(blocks|bans|revokes|orders.{0,25}halt|imposes.{0,25}billion)'
+  - type: core_product
+    label: 핵심 기술·제품 발표
+    scope: company
+    patterns:
+      - '(unveils|launches|announces).{0,60}(next-generation|breakthrough).{0,40}(gpu|semiconductor|chip architecture|ai accelerator)'

@@ -1,0 +1,26 @@
+[Unit]
+Description=US Market Radar important-news monitoring
+Wants=network-online.target
+After=network-online.target
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=radar
+Group=radar
+WorkingDirectory=/opt/us-market-monitor
+ExecStart=/opt/us-market-monitor/.venv/bin/python /opt/us-market-monitor/main.py
+Restart=on-failure
+RestartSec=15
+TimeoutStopSec=60
+KillSignal=SIGTERM
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/us-market-monitor/data /opt/us-market-monitor/logs
+
+[Install]
+WantedBy=multi-user.target

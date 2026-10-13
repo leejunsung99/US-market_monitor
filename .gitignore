@@ -4,6 +4,8 @@
 !.env.example
 *.pem
 *.key
+*.pfx
+*.p12
 credentials*.json
 service-account*.json
 .aws/
@@ -29,7 +31,14 @@ logs/
 *.log
 *.sqlite
 *.sqlite3
+*.sqlite-wal
+*.sqlite-shm
+*.sqlite3-wal
+*.sqlite3-shm
 *.db
+*.db-wal
+*.db-shm
+radar*.lock
 
 # Editor and OS files
 .idea/
