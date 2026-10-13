@@ -179,7 +179,7 @@ data/ / logs/                   # 로컬 런타임 파일, Git 제외
 .\.venv\Scripts\python.exe -m pip check
 ```
 
-로컬 Windows / Python 3.12에서 **87개 테스트 통과**, Ruff 정적 검사와 `pip check` 통과. 상세 결과와 실제 API 검증 범위는 [docs/VALIDATION.md](docs/VALIDATION.md)에 기록했습니다. 테스트는 외부 네트워크나 실제 Telegram 전송을 사용하지 않습니다. 외부 수집 성공은 별도의 실연동 점검 결과로만 보고합니다.
+로컬 Windows / Python 3.12에서 **87개 테스트 통과**, Ruff 정적 검사와 `pip check` 통과. GitHub CI의 Windows/Ubuntu × Python 3.11/3.12/3.13 조합도 모두 통과했습니다. 상세 결과와 실제 API 검증 범위는 [docs/VALIDATION.md](docs/VALIDATION.md)에 기록했습니다. 테스트는 외부 네트워크나 실제 Telegram 전송을 사용하지 않습니다. 외부 수집 성공은 별도의 실연동 점검 결과로만 보고합니다.
 
 ## 공개 저장소와 비밀 설정
 

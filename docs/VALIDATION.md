@@ -6,6 +6,8 @@
 
 `python -m pytest -q`: **87 passed**. `ruff check .`: 통과. `pip check`: `No broken requirements found`. `git diff --check`: 통과.
 
+[GitHub CI](https://github.com/leejunsung99/US-market_monitor/actions/runs/38338123889)에서도 Windows/Ubuntu × Python 3.11/3.12/3.13의 6개 조합 모두 통과했습니다. 후속 워크플로는 공식 최신 v7 액션의 커밋 SHA에 고정해 실행합니다.
+
 - 수집: SEC 공식 티커·CIK 매핑, submissions 배열, 8-K item 선별, 6-K 첨부 추출, RSS·날짜·본문, Finnhub 뉴스 구조·조회 파라미터·잘못된 응답.
 - 분류: 관심 기업 이름만 등장하는 기사, 목표주가·홍보·회고·추측 제외; 실제 정책·실적·계약·생산 사건; 최소 거래 규모; 미래 날짜·잘못된 출처 거부.
 - 저장·중복: 일반 사건 본문 미보관, WAL, 매체 간 중복, 추적 URL 정리, 재시작, 전망 수정·동일 기사 업데이트, 국가별 정책 분리.
@@ -35,7 +37,7 @@
 2. Finnhub 키를 입력하고 `/news` 및 `/company-news`의 계정 플랜 접근 범위·호출 제한·관심 기업 지원을 확인합니다. 기본 30회/분은 보수적 초기 설정이지 계정별 허용량을 보증하는 값이 아닙니다. 회사 뉴스는 공식 문서상 북미 기업 범위이며 해외 기업 ADR 지원은 실계정 확인이 필요합니다.
 3. Telegram 봇을 실제 채널 관리자로 추가하고 메시지 게시 권한을 부여한 뒤 `main.py --test-telegram`로 연결 확인합니다.
 4. 실제 신규 사건이 발생할 때 전체 수집→분류→DB→채널 경로, 기사 지연, 한국어 분류와 원문 발췌, 유사 기사 억제를 운영 관측합니다. 의미 기반 중복·중요도 규칙에는 오탐/누락 가능성이 있습니다.
-5. Ubuntu 환경의 경로·사용자·파일 권한과 systemd 재시작/종료를 점검합니다. Ubuntu 서버를 배포하거나 Windows 작업을 실제 등록하지 않았습니다. Windows/Ubuntu 및 Python 3.11–3.13의 CI는 GitHub 실행 결과로 별도 확인합니다.
+5. Ubuntu 환경의 경로·사용자·파일 권한과 systemd 재시작/종료를 점검합니다. Ubuntu 서버를 배포하거나 Windows 작업을 실제 등록하지 않았습니다. Windows/Ubuntu 및 Python 3.11–3.13의 모의 응답 기반 CI는 통과했지만 실제 서버 운영 검증을 대신하지는 않습니다.
 
 ## 명시적인 초기 범위
 
