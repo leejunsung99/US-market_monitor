@@ -12,7 +12,8 @@ def format_event(event, summarizer=None):
     published = event.published_at.astimezone(KST).strftime("%Y-%m-%d %H:%M KST")
     return (
         f"<b>{escape(title[:350])}</b>\n\n{escape(summary[:800])}\n\n"
-        f'{published} · <a href="{escape(event.source_url, quote=True)}">원문 보기</a>'
+        f'{published}\n\n📌원문 보러가기\n'
+        f'(<a href="{escape(event.source_url, quote=True)}">{escape(event.source_url)}</a>)'
     )
 
 
@@ -28,8 +29,9 @@ def format_rich_article(event, *, test=False):
         {
             "type": "footer",
             "text": [
-                published + " · ",
-                {"type": "url", "text": "원문 보기", "url": event.source_url},
+                published + "\n\n📌원문 보러가기\n(",
+                {"type": "url", "text": event.source_url, "url": event.source_url},
+                ")",
             ],
         }
     )
