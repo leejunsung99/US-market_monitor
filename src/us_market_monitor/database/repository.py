@@ -89,6 +89,20 @@ class Repository:
                 self.db.execute(
                     "ALTER TABLE seen ADD COLUMN rules_version TEXT NOT NULL DEFAULT ''"
                 )
+            # Preserve already sent stories across this rule upgrade: reconstruct
+            # comparable figures from their retained source excerpts, never re-send them.
+            for row in self.db.execute(
+                "SELECT * FROM events WHERE event_type IN ('earnings','earnings_guidance')"
+            ).fetchall():
+                facts = json.loads(row["material_facts"])
+                if "earnings" not in facts:
+                    from us_market_monitor.processors.earnings import earnings_facts
+
+                    facts["earnings"] = earnings_facts(self.row_event(row))
+                    self.db.execute(
+                        "UPDATE events SET material_facts=? WHERE id=?",
+                        (json.dumps(facts), row["id"]),
+                    )
             self.db.commit()
 
     def close(self):
@@ -215,10 +229,15 @@ class Repository:
                 "WHERE i.identity_hash IN (?,?,?)",
                 keys,
             ).fetchall()
+            family = (
+                ("earnings", "earnings_guidance")
+                if event.event_type in {"earnings", "earnings_guidance"}
+                else (event.event_type, event.event_type)
+            )
             nearby = self.db.execute(
-                "SELECT * FROM events WHERE event_type=? AND published_at BETWEEN ? AND ?",
+                "SELECT * FROM events WHERE event_type IN (?,?) AND published_at BETWEEN ? AND ?",
                 (
-                    event.event_type,
+                    *family,
                     (event.published_at - window).isoformat(),
                     (event.published_at + window).isoformat(),
                 ),
@@ -307,6 +326,10 @@ class Repository:
             row["source_url"],
             parse_time(row["published_at"]),
             detected_at=parse_time(row["detected_at"]),
+            metadata={
+                "official": optional("evidence_level", "") == "official_source"
+                or row["source"] in {"SEC EDGAR", "Federal Reserve"}
+            },
             related_tickers=tuple(json.loads(row["related_tickers"])),
             event_type=row["event_type"],
             priority=row["priority"],
@@ -349,7 +372,8 @@ class Repository:
         return self.db.execute(
             "SELECT e.*,n.retry_count FROM events e JOIN notifications n ON n.event_id=e.id "
             "WHERE n.status='pending' AND n.next_attempt_at<=? "
-            "ORDER BY CASE e.priority WHEN 'CRITICAL' THEN 0 ELSE 1 END,e.published_at LIMIT ?",
+            "ORDER BY CASE e.priority WHEN 'CRITICAL' THEN 0 ELSE 1 END,"
+            "CASE e.evidence_level WHEN 'official_source' THEN 0 ELSE 1 END,e.published_at LIMIT ?",
             (now.isoformat(), limit),
         ).fetchall()
 

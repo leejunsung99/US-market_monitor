@@ -1,6 +1,7 @@
 import re
 from difflib import SequenceMatcher
 
+from us_market_monitor.processors.earnings import EARNINGS_TYPES, earnings_facts, earnings_update
 from us_market_monitor.processors.normalizer import digest, normalized_title
 
 
@@ -40,14 +41,19 @@ def material_facts(event, filters):
     if event_stage:
         stages.append(event_stage)
         update_signal = event_stage in {"announced_plan", "launched", "mass_production"}
-    return {
+    facts = {
         "amounts": sorted(set(amounts)),
         "stages": sorted(stages),
         "update_signal": update_signal,
     }
+    if event.event_type in EARNINGS_TYPES:
+        facts["earnings"] = earnings_facts(event)
+    return facts
 
 
 def meaningful_update(new_facts, old_facts):
+    if "earnings" in new_facts:
+        return earnings_update(new_facts["earnings"], old_facts.get("earnings", {}))
     # Newly reported detail alone is insufficient: require a changed action/stage,
     # or explicit revision plus two independently supplied, different quantities.
     if not new_facts.get("update_signal"):
@@ -73,6 +79,20 @@ def meaningful_update(new_facts, old_facts):
 
 
 def same_story(event, row, filters):
+    if event.event_type in EARNINGS_TYPES and row["event_type"] in EARNINGS_TYPES:
+        if not set(event.entity_key.split(",")).intersection(row["entity_key"].split(",")):
+            return False
+        import json
+
+        old = json.loads(row["material_facts"]).get("earnings", {})
+        new = earnings_facts(event)
+        if (
+            old.get("periods")
+            and new["periods"]
+            and not set(old["periods"]).intersection(new["periods"])
+        ):
+            return False
+        return True
     if event.event_type != row["event_type"]:
         return False
     old_entities = set(row["entity_key"].split(","))

@@ -44,7 +44,12 @@ def event_factory():
             source="Finnhub/Test Publisher",
             source_event_id="100",
             title=title,
-            summary=title,
+            summary=title
+            + (
+                " Revenue was $10 billion."
+                if ("quarterly results" in title or "revenue outlook" in title) and "$" not in title
+                else ""
+            ),
             source_url="https://example.com/news/100",
             published_at=utcnow() - timedelta(minutes=1),
         )

@@ -1,5 +1,9 @@
 # Precision-first: a company name or topic keyword alone cannot pass.
-rules_version: '2026-10-13.1'
+rules_version: '2026-10-14.1'
+commentary_url_pattern: '/(?:video|videos|podcast|podcasts)/'
+commentary_patterns:
+  - '\b(hosts?|anchors?|panelists?).{0,100}(discuss|dissect|break down|weigh in)'
+  - '\b(market recap|earnings recap|weekly recap|daily recap|what it means for investors)\b'
 review_retention_days: 7
 review_max_rows: 500
 score_weights:

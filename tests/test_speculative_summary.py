@@ -8,7 +8,8 @@ def test_speculation_in_event_sentence_cannot_pass_via_summary(classifier, event
 
 def test_confirmed_event_not_negated_by_forward_looking_summary(classifier, event_factory):
     event = event_factory(
-        "NVIDIA reports quarterly results", summary="The company may see higher demand next year."
+        "NVIDIA reports quarterly results",
+        summary="Revenue was $10 billion. The company may see higher demand next year.",
     )
     assert classifier.classify(event).event_type == "earnings"
 

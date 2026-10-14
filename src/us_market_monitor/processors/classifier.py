@@ -1,8 +1,10 @@
 import json
 import re
 from datetime import timedelta
+from urllib.parse import urlsplit
 
 from us_market_monitor.database.models import Event, utcnow
+from us_market_monitor.processors.earnings import EARNINGS_TYPES, earnings_facts
 from us_market_monitor.processors.industry import IndustryRules
 from us_market_monitor.processors.normalizer import canonical_url, digest, plain_text
 
@@ -51,6 +53,15 @@ class Classifier:
         focus = headline + ". " + summary
         if any_match(self.filters.get("hard_exclusions", []), focus):
             return self._decision(event, "reject", "promotion_or_historical_content")
+        if not event.metadata.get("official") and (
+            re.search(
+                self.filters.get("commentary_url_pattern", r"/(?:video|videos|podcast|podcasts)/"),
+                urlsplit(event.source_url).path,
+                re.I,
+            )
+            or any_match(self.filters.get("commentary_patterns", []), focus)
+        ):
+            return self._decision(event, "reject", "commentary_or_recap")
         fragments = [headline, *re.split(r"(?<=[.!?])\s+", summary)]
         if event.metadata.get("official"):
             fragments.extend(re.split(r"(?<=[.!?])\s+", event.body))
@@ -94,6 +105,12 @@ class Classifier:
             )
         approved = self._classify_legacy(event)
         if approved:
+            if event.event_type in EARNINGS_TYPES and not event.metadata.get("official"):
+                facts = earnings_facts(event)
+                if not facts["metrics"] and facts["guidance_status"] != "withdrawn":
+                    return self._decision(
+                        event, "review", "earnings_missing_reported_figures", evidence=focus[:700]
+                    )
             return self._decision(
                 event,
                 "approve",

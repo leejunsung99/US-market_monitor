@@ -19,7 +19,7 @@ def test_telegram_payload_and_html_escaping(monkeypatch, classifier, event_facto
     event = classifier.classify(
         event_factory(
             title='NVIDIA reports quarterly results & "quote"',
-            summary='NVIDIA reports quarterly results <script>bad</script> & "quote"',
+            summary='NVIDIA reports quarterly results <script>bad</script> & "quote". Revenue was $10 billion.',
         )
     )
     text = format_event(event)
