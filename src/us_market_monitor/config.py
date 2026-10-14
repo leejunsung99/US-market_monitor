@@ -51,6 +51,9 @@ class Config:
     max_attempts: int = 3
     max_notification_age: float = 24
     log_level: str = "INFO"
+    translator_key: str = field(default="", repr=False)
+    translator_region: str = "global"
+    translator_endpoint: str = "https://api.cognitive.microsofttranslator.com/"
 
     @property
     def telegram_enabled(self) -> bool:
@@ -183,6 +186,11 @@ class Config:
         if boolean("AI_SUMMARY_ENABLED", False):
             raise ConfigError("AI summary is not implemented in v1; use AI_SUMMARY_ENABLED=false")
         level = os.getenv("LOG_LEVEL", "INFO").upper()
+        translator_endpoint = os.getenv(
+            "AZURE_TRANSLATOR_ENDPOINT", "https://api.cognitive.microsofttranslator.com/"
+        ).strip()
+        if translator_endpoint.rstrip("/") != "https://api.cognitive.microsofttranslator.com":
+            raise ConfigError("Use the Azure Translator global HTTPS endpoint")
         if level not in {"DEBUG", "INFO", "WARNING", "ERROR"}:
             raise ConfigError("Invalid LOG_LEVEL")
         return cls(
@@ -206,4 +214,7 @@ class Config:
             int(number("HTTP_MAX_ATTEMPTS", 3, 1, 5)),
             number("MAX_NOTIFICATION_AGE_HOURS", 24, 1, 168),
             level,
+            os.getenv("AZURE_TRANSLATOR_KEY", "").strip(),
+            os.getenv("AZURE_TRANSLATOR_REGION", "global").strip(),
+            translator_endpoint,
         )

@@ -22,6 +22,7 @@ from us_market_monitor.notifications.formatter import format_event
 from us_market_monitor.notifications.telegram import DeliveryError, Telegram
 from us_market_monitor.processors.classifier import Classifier
 from us_market_monitor.processors.normalizer import parse_time
+from us_market_monitor.processors.translator import Translator
 
 KST = ZoneInfo("Asia/Seoul")
 
@@ -170,6 +171,7 @@ def send(config, repo, limit, spacing, stop):
         config.telegram_token, config.telegram_chat_id, timeout=config.timeout, stop=stop
     )
     sent = 0
+    translator = Translator(config) if getattr(config, "translator_key", "") else None
     for index, row in enumerate(rows, 1):
         if stop.is_set() or not repo.claim(row["id"]):
             break
@@ -183,6 +185,8 @@ def send(config, repo, limit, spacing, stop):
         try:
             if hasattr(telegram, "send_article"):
                 event = enrich_article(repo.row_event(row), stop=stop)
+                if translator:
+                    translator.translate(event)
                 with repo.db:
                     repo.update_article(row["id"], event)
                 message_id = telegram.send_article(event, test=True)

@@ -18,6 +18,7 @@ from us_market_monitor.database.repository import Repository
 from us_market_monitor.http import HttpClient, Stopped
 from us_market_monitor.notifications.telegram import DeliveryError, Telegram
 from us_market_monitor.processors.classifier import Classifier
+from us_market_monitor.processors.translator import Translator
 from us_market_monitor.scheduler.jobs import Radar
 
 log = logging.getLogger(__name__)
@@ -45,7 +46,13 @@ def setup_logging(config):
         ),
     ]
     formatter = RedactingFormatter(
-        [config.telegram_token, config.telegram_chat_id, config.finnhub_key, config.sec_user_agent]
+        [
+            config.telegram_token,
+            config.telegram_chat_id,
+            config.finnhub_key,
+            config.sec_user_agent,
+            config.translator_key,
+        ]
     )
     for handler in handlers:
         handler.setFormatter(formatter)
@@ -187,6 +194,7 @@ def main(argv=None):
                 repo,
                 Classifier(config.watchlist, config.filters),
                 telegram=telegram,
+                translator=Translator(config) if config.translator_key else None,
                 dry_run=args.dry_run,
                 max_notification_age=config.max_notification_age,
                 stop=stop,

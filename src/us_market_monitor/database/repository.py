@@ -80,6 +80,9 @@ class Repository:
                 "score_breakdown": "TEXT NOT NULL DEFAULT '{}'",
                 "article_summary": "TEXT NOT NULL DEFAULT ''",
                 "image_url": "TEXT NOT NULL DEFAULT ''",
+                "title_ko": "TEXT NOT NULL DEFAULT ''",
+                "summary_ko": "TEXT NOT NULL DEFAULT ''",
+                "translation_hash": "TEXT NOT NULL DEFAULT ''",
             }.items():
                 if name not in event_columns:
                     self.db.execute(f"ALTER TABLE events ADD COLUMN {name} {declaration}")
@@ -344,12 +347,23 @@ class Repository:
             score_breakdown=json.loads(optional("score_breakdown", "{}")),
             article_summary=optional("article_summary", ""),
             image_url=optional("image_url", ""),
+            title_ko=optional("title_ko", ""),
+            summary_ko=optional("summary_ko", ""),
+            translation_hash=optional("translation_hash", ""),
         )
 
     def update_article(self, event_id, event):
         self.db.execute(
-            "UPDATE events SET article_summary=?,image_url=?,source_url=? WHERE id=?",
-            (event.article_summary[:1500], event.image_url, event.source_url, event_id),
+            "UPDATE events SET article_summary=?,image_url=?,source_url=?,title_ko=?,summary_ko=?,translation_hash=? WHERE id=?",
+            (
+                event.article_summary[:1500],
+                event.image_url,
+                event.source_url,
+                event.title_ko,
+                event.summary_ko,
+                event.translation_hash,
+                event_id,
+            ),
         )
 
     def recover_inflight(self):

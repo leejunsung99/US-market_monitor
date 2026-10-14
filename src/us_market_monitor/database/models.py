@@ -32,6 +32,9 @@ class Event:
     score_breakdown: dict = field(default_factory=dict)
     article_summary: str = ""
     image_url: str = ""
+    title_ko: str = ""
+    summary_ko: str = ""
+    translation_hash: str = ""
 
     def __post_init__(self):
         for name in ("published_at", "detected_at"):

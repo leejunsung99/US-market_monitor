@@ -13,4 +13,6 @@ class RuleSummarizer:
     def summarize(self, event: Event) -> tuple[str, str]:
         from us_market_monitor.notifications.article import source_excerpt
 
-        return event.title, source_excerpt(event.article_summary or event.summary, event.title)
+        return event.title_ko or event.title, event.summary_ko or source_excerpt(
+            event.article_summary or event.summary, event.title
+        )

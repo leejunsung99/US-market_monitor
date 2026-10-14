@@ -27,10 +27,12 @@ class Radar:
         dry_run=False,
         max_notification_age=24,
         stop=None,
+        translator=None,
     ):
         self.collectors = {c.name: c for c in collectors}
         self.repo, self.classifier = repository, classifier
         self.telegram, self.dry_run = telegram, dry_run
+        self.translator = translator
         self.max_notification_age = max_notification_age
         self.stop = stop or threading.Event()
         self.futures = {}
@@ -98,6 +100,8 @@ class Radar:
                 event = self.repo.row_event(row)
                 if hasattr(self.telegram, "send_article"):
                     enrich_article(event, stop=self.stop)
+                    if self.translator:
+                        self.translator.translate(event)
                     with self.repo.db:
                         self.repo.update_article(row["id"], event)
                     message_id = self.telegram.send_article(event)
