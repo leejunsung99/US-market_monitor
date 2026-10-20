@@ -10,8 +10,12 @@ from pathlib import Path
 
 from filelock import FileLock, Timeout
 
+from us_market_monitor.collectors.calendar import CensusCalendarCollector
+from us_market_monitor.collectors.economic import EconomicCollector
 from us_market_monitor.collectors.fed import FEEDS, FedCollector
 from us_market_monitor.collectors.finnhub import FinnhubCollector
+from us_market_monitor.collectors.official import OfficialCollector
+from us_market_monitor.collectors.public_economy import PublicEconomyCollector
 from us_market_monitor.collectors.sec import SecCollector, SecMapping
 from us_market_monitor.config import Config, ConfigError
 from us_market_monitor.database.repository import Repository
@@ -65,6 +69,58 @@ def setup_logging(config):
 def build_collectors(config, stop):
     collectors = []
     shared = {"timeout": config.timeout, "attempts": config.max_attempts, "stop": stop}
+    if config.release_monitor_enabled:
+        collectors.append(
+            CensusCalendarCollector(
+                HttpClient(**shared, spacing=1, headers={"User-Agent": "USMarketRadar/0.2"})
+            )
+        )
+    if config.economic_enabled:
+        economic_http = HttpClient(
+            **shared,
+            spacing=1.0,
+            headers={
+                "User-Agent": "USMarketRadar/0.2 (economic releases monitor)",
+                "Accept": "application/rss+xml, application/xml, text/html;q=0.9",
+            },
+        )
+        bea_http = HttpClient(
+            **shared, spacing=1.0, headers={"User-Agent": "USMarketRadar/0.2", "Accept": "*/*"}
+        )
+        collectors += [
+            EconomicCollector(
+                bea_http if name in {"bea", "census"} else economic_http,
+                name,
+                url,
+                config.economic_interval,
+                config.economic_initial_lookback,
+            )
+            for name, url in config.economic_feeds.items()
+        ]
+        collectors += [
+            PublicEconomyCollector(
+                bea_http,
+                "claims",
+                config.claims_url,
+                config.public_interval,
+                config.economic_initial_lookback,
+            ),
+            PublicEconomyCollector(
+                bea_http,
+                "oil",
+                config.eia_csv_url,
+                max(1800, config.public_interval),
+                config.economic_initial_lookback,
+            ),
+        ]
+    if config.public_sources_enabled:
+        public_http = HttpClient(**shared, spacing=1.0, headers={"User-Agent": "USMarketRadar/0.2"})
+        collectors += [
+            OfficialCollector(
+                public_http, definition, config.public_interval, config.economic_initial_lookback
+            )
+            for definition in config.public_sources
+        ]
     if config.fed_enabled:
         fed_http = HttpClient(**shared, spacing=1.0, headers={"User-Agent": "USMarketRadar/0.2"})
         collectors += [FedCollector(fed_http, name, config.fed_interval) for name in FEEDS]
@@ -106,6 +162,14 @@ def main(argv=None):
             stream.reconfigure(encoding="utf-8")
     parser = argparse.ArgumentParser(description="US Market Radar — important events only")
     parser.add_argument("--once", action="store_true", help="Poll each enabled source once")
+    parser.add_argument(
+        "--economic-only", action="store_true", help="Collect only official economic releases"
+    )
+    parser.add_argument(
+        "--official-only",
+        action="store_true",
+        help="Collect economic releases and public official newsrooms only",
+    )
     parser.add_argument(
         "--dry-run", action="store_true", help="No Telegram or persistent DB changes"
     )
@@ -181,6 +245,26 @@ def main(argv=None):
                     else "credentials missing; important events remain pending",
                 )
             collectors = build_collectors(config, stop)
+            if args.economic_only:
+                collectors = [
+                    c
+                    for c in collectors
+                    if isinstance(c, (EconomicCollector, PublicEconomyCollector))
+                ]
+            if args.official_only:
+                collectors = [
+                    c
+                    for c in collectors
+                    if isinstance(
+                        c,
+                        (
+                            EconomicCollector,
+                            PublicEconomyCollector,
+                            OfficialCollector,
+                            CensusCalendarCollector,
+                        ),
+                    )
+                ]
             if not collectors:
                 raise ConfigError("No collectors enabled; configure at least one source")
             log.info(
@@ -195,6 +279,7 @@ def main(argv=None):
                 Classifier(config.watchlist, config.filters),
                 telegram=telegram,
                 translator=Translator(config) if config.translator_key else None,
+                monitor_releases=config.release_monitor_enabled and not args.economic_only,
                 dry_run=args.dry_run,
                 max_notification_age=config.max_notification_age,
                 stop=stop,

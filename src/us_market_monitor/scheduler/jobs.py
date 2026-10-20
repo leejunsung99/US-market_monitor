@@ -28,24 +28,28 @@ class Radar:
         max_notification_age=24,
         stop=None,
         translator=None,
+        monitor_releases=False,
     ):
         self.collectors = {c.name: c for c in collectors}
         self.repo, self.classifier = repository, classifier
         self.telegram, self.dry_run = telegram, dry_run
         self.translator = translator
+        self.monitor_releases = monitor_releases
         self.max_notification_age = max_notification_age
         self.stop = stop or threading.Event()
         self.futures = {}
         self.next_due = {name: 0.0 for name in self.collectors}
         self.notification_due = 0.0
         self.maintenance_due = 0.0
+        self.release_monitor_due = 0.0
         # Persist baselines BEFORE any fetch. Failed first requests keep the same baseline.
         # Newly published events during initial fetch are not silently swallowed.
         # Sources usually publish whole-second timestamps. Round down to avoid
         # dropping an event published in the same second just after process startup.
         started_at = utcnow().replace(microsecond=0)
         for name in self.collectors:
-            self.repo.ensure_source(name, started_at)
+            lookback = getattr(self.collectors[name], "initial_lookback_hours", 0)
+            self.repo.ensure_source(name, started_at - timedelta(hours=lookback))
 
     def fetch(self, name):
         state = self.repo.state(name)
@@ -59,6 +63,11 @@ class Radar:
         return since, cursor
 
     def process(self, name, events, cursor):
+        if getattr(self.collectors[name], "is_calendar", False):
+            self.repo.save_expected_releases(name, events)
+            self.repo.success(name, cursor)
+            log.info("%s: calendar succeeded expected_releases=%d", name, len(events))
+            return
         baseline = parse_time(cursor["baseline_at"])
         accepted = 0
         for event in sorted(events, key=lambda e: e.published_at):
@@ -160,6 +169,15 @@ class Radar:
                         log.error("%s: collection failed (%s), retry in %.0fs", name, code, backoff)
                     else:
                         self.next_due[name] = time.monotonic() + self.collectors[name].interval
+                if (
+                    self.monitor_releases
+                    and time.monotonic() >= self.release_monitor_due
+                    and not any(
+                        name in self.futures for name in ("calendar:census", "economic:census")
+                    )
+                ):
+                    self.repo.queue_missing_releases(self.classifier.filters)
+                    self.release_monitor_due = time.monotonic() + 60
                 self.dispatch()
                 if once and len(attempted) == len(self.collectors) and not self.futures:
                     # Drain eligible ready notifications, but do not spin on deferred retries.

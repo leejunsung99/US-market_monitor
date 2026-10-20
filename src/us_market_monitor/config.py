@@ -3,9 +3,12 @@ import os
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
+from urllib.parse import urlsplit
 
 import yaml
 from dotenv import load_dotenv
+
+from us_market_monitor.collectors.economic import DEFAULT_FEEDS
 
 
 class ConfigError(ValueError):
@@ -54,6 +57,18 @@ class Config:
     translator_key: str = field(default="", repr=False)
     translator_region: str = "global"
     translator_endpoint: str = "https://api.cognitive.microsofttranslator.com/"
+    economic_enabled: bool = True
+    economic_interval: float = 120
+    economic_initial_lookback: float = 24
+    economic_feeds: dict = field(
+        default_factory=lambda: {name: url for name, (_, url) in DEFAULT_FEEDS.items()}
+    )
+    public_sources_enabled: bool = True
+    public_sources: list = field(default_factory=list)
+    public_interval: float = 600
+    claims_url: str = "https://www.dol.gov/ui/data.pdf"
+    eia_csv_url: str = "https://ir.eia.gov/wpsr/psw00.csv"
+    release_monitor_enabled: bool = True
 
     @property
     def telegram_enabled(self) -> bool:
@@ -137,6 +152,7 @@ class Config:
             "material_scale_patterns",
             "hard_exclusions",
             "hard_speculation",
+            "historical_headlines",
         ):
             try:
                 for pattern in filters.get(name, []):
@@ -193,6 +209,59 @@ class Config:
             raise ConfigError("Use the Azure Translator global HTTPS endpoint")
         if level not in {"DEBUG", "INFO", "WARNING", "ERROR"}:
             raise ConfigError("Invalid LOG_LEVEL")
+        economic_feeds = {}
+        for name, (setting, default) in DEFAULT_FEEDS.items():
+            url = os.getenv(setting, default).strip()
+            parts = urlsplit(url)
+            host = {"bea": "apps.bea.gov", "census": "www.census.gov"}.get(name, "www.bls.gov")
+            if (
+                parts.scheme != "https"
+                or parts.hostname != host
+                or parts.username
+                or parts.password
+            ):
+                raise ConfigError(f"{setting} must use its official HTTPS host")
+            economic_feeds[name] = url
+        sources_path = path("OFFICIAL_SOURCES_PATH", "settings/official_sources.yaml")
+        try:
+            public_sources = (
+                yaml.safe_load(sources_path.read_text(encoding="utf-8")).get("sources", [])
+                if sources_path.exists()
+                else []
+            )
+            for definition in public_sources:
+                parts = urlsplit(definition["url"])
+                if (
+                    definition["kind"] not in {"rss", "bis", "tsmc"}
+                    or parts.scheme != "https"
+                    or parts.hostname not in definition["hosts"]
+                    or parts.username
+                    or parts.password
+                    or not re.fullmatch(r"[a-z0-9_-]+", definition["name"])
+                ):
+                    raise ValueError()
+                if definition.get("ticker") and definition["ticker"] not in watchlist["companies"]:
+                    raise ValueError()
+        except (OSError, yaml.YAMLError, ValueError, KeyError, TypeError, AttributeError):
+            raise ConfigError("Invalid official source definitions") from None
+        scope = os.getenv("OFFICIAL_ALERT_SCOPE", filters.get("official_alert_scope", "all"))
+        if scope not in {"all", "material"}:
+            raise ConfigError("OFFICIAL_ALERT_SCOPE must be all or material")
+        filters["official_alert_scope"] = scope
+        claims_url = os.getenv("DOL_CLAIMS_PDF_URL", "https://www.dol.gov/ui/data.pdf").strip()
+        eia_url = os.getenv("EIA_WEEKLY_CSV_URL", "https://ir.eia.gov/wpsr/psw00.csv").strip()
+        for name, url, host in (
+            ("DOL_CLAIMS_PDF_URL", claims_url, "www.dol.gov"),
+            ("EIA_WEEKLY_CSV_URL", eia_url, "ir.eia.gov"),
+        ):
+            parts = urlsplit(url)
+            if (
+                parts.scheme != "https"
+                or parts.hostname != host
+                or parts.username
+                or parts.password
+            ):
+                raise ConfigError(f"{name} must use its official HTTPS host")
         return cls(
             root,
             path("DATA_DIR", "data"),
@@ -217,4 +286,14 @@ class Config:
             os.getenv("AZURE_TRANSLATOR_KEY", "").strip(),
             os.getenv("AZURE_TRANSLATOR_REGION", "global").strip(),
             translator_endpoint,
+            economic_enabled=boolean("ECONOMIC_ENABLED", True),
+            economic_interval=number("ECONOMIC_INTERVAL_SECONDS", 120, 60, 86400),
+            economic_initial_lookback=number("ECONOMIC_INITIAL_LOOKBACK_HOURS", 24, 0, 48),
+            economic_feeds=economic_feeds,
+            public_sources_enabled=boolean("PUBLIC_SOURCES_ENABLED", True),
+            public_sources=public_sources,
+            public_interval=number("PUBLIC_SOURCE_INTERVAL_SECONDS", 600, 120, 86400),
+            claims_url=claims_url,
+            eia_csv_url=eia_url,
+            release_monitor_enabled=boolean("RELEASE_MONITOR_ENABLED", True),
         )

@@ -1,6 +1,6 @@
 import json
 import sqlite3
-from datetime import timedelta
+from datetime import UTC, timedelta
 from pathlib import Path
 
 from us_market_monitor.database.models import Event, utcnow
@@ -24,6 +24,10 @@ CREATE TABLE IF NOT EXISTS events (
   material_facts TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS ix_events_story ON events(event_type, published_at);
+CREATE TABLE IF NOT EXISTS expected_releases (
+  release_key TEXT PRIMARY KEY, calendar_source TEXT NOT NULL, indicator TEXT NOT NULL,
+  title TEXT NOT NULL, scheduled_at TEXT NOT NULL, source_url TEXT NOT NULL, alerted_at TEXT
+);
 CREATE TABLE IF NOT EXISTS notifications (
   event_id INTEGER PRIMARY KEY REFERENCES events(id),
   telegram_message_id INTEGER,
@@ -83,6 +87,7 @@ class Repository:
                 "title_ko": "TEXT NOT NULL DEFAULT ''",
                 "summary_ko": "TEXT NOT NULL DEFAULT ''",
                 "translation_hash": "TEXT NOT NULL DEFAULT ''",
+                "source_metadata": "TEXT NOT NULL DEFAULT '{}'",
             }.items():
                 if name not in event_columns:
                     self.db.execute(f"ALTER TABLE events ADD COLUMN {name} {declaration}")
@@ -330,8 +335,9 @@ class Repository:
             parse_time(row["published_at"]),
             detected_at=parse_time(row["detected_at"]),
             metadata={
+                **json.loads(optional("source_metadata", "{}")),
                 "official": optional("evidence_level", "") == "official_source"
-                or row["source"] in {"SEC EDGAR", "Federal Reserve"}
+                or row["source"] in {"SEC EDGAR", "Federal Reserve"},
             },
             related_tickers=tuple(json.loads(row["related_tickers"])),
             event_type=row["event_type"],
@@ -354,14 +360,33 @@ class Repository:
 
     def update_article(self, event_id, event):
         self.db.execute(
-            "UPDATE events SET article_summary=?,image_url=?,source_url=?,title_ko=?,summary_ko=?,translation_hash=? WHERE id=?",
+            "UPDATE events SET article_summary=?,image_url=?,source_url=?,title_ko=?,summary_ko=?,translation_hash=?,source_metadata=? WHERE id=?",
             (
-                event.article_summary[:1500],
+                event.article_summary,
                 event.image_url,
                 event.source_url,
                 event.title_ko,
                 event.summary_ko,
                 event.translation_hash,
+                json.dumps(
+                    {
+                        k: event.metadata[k]
+                        for k in (
+                            "form",
+                            "items",
+                            "issuer",
+                            "official",
+                            "indicator",
+                            "feed",
+                            "verified_official",
+                            "issuer_ticker",
+                            "publication_precision",
+                            "publication_date",
+                            "original_download_url",
+                        )
+                        if k in event.metadata
+                    }
+                ),
                 event_id,
             ),
         )
@@ -473,3 +498,75 @@ class Repository:
             },
             "important_events": self.db.execute("SELECT count(*) FROM events").fetchone()[0],
         }
+
+    def save_expected_releases(self, calendar_source, entries):
+        with self.db:
+            # Replace unhandled expectations from the authoritative calendar;
+            # canceled/postponed entries must not produce false missing alerts.
+            self.db.execute(
+                "DELETE FROM expected_releases WHERE calendar_source=? AND alerted_at IS NULL",
+                (calendar_source,),
+            )
+            self.db.execute(
+                "DELETE FROM expected_releases WHERE scheduled_at<?",
+                ((utcnow() - timedelta(days=7)).isoformat(),),
+            )
+            for entry in entries:
+                when = parse_time(entry["scheduled_at"]).astimezone(UTC).isoformat()
+                key = digest(calendar_source + ":" + entry["indicator"] + ":" + when)
+                self.db.execute(
+                    "INSERT INTO expected_releases(release_key,calendar_source,indicator,title,scheduled_at,source_url) VALUES(?,?,?,?,?,?) ON CONFLICT(release_key) DO UPDATE SET title=excluded.title,source_url=excluded.source_url",
+                    (
+                        key,
+                        calendar_source,
+                        entry["indicator"],
+                        entry["title"],
+                        when,
+                        entry["source_url"],
+                    ),
+                )
+
+    def queue_missing_releases(self, filters, grace_minutes=30):
+        now = utcnow()
+        due = self.db.execute(
+            "SELECT * FROM expected_releases WHERE alerted_at IS NULL AND scheduled_at BETWEEN ? AND ?",
+            (
+                (now - timedelta(days=1)).isoformat(),
+                (now - timedelta(minutes=grace_minutes)).isoformat(),
+            ),
+        ).fetchall()
+        for row in due:
+            when = parse_time(row["scheduled_at"])
+            entity = "us:" + row["indicator"] + ":"
+            found = self.db.execute(
+                "SELECT 1 FROM events WHERE event_type='economic_indicator' AND substr(entity_key,1,?)=? AND published_at BETWEEN ? AND ?",
+                (
+                    len(entity),
+                    entity,
+                    (when - timedelta(minutes=5)).isoformat(),
+                    (when + timedelta(days=1)).isoformat(),
+                ),
+            ).fetchone()
+            if not found:
+                event = Event(
+                    "Radar Monitor",
+                    row["release_key"],
+                    "예정된 경제지표 수집 확인 필요",
+                    row["title"]
+                    + " 발표 예정 시각 이후 30분이 지났지만 해당 발표의 수집 기록을 확인하지 못했습니다. 공식 발표 지연 또는 수집 경로 오류 여부를 확인해야 합니다.",
+                    row["source_url"],
+                    now,
+                    metadata={"official": False},
+                    event_type="monitor_alert",
+                    priority="HIGH",
+                    entity_key=row["release_key"],
+                    industry="수집 상태",
+                    reason="scheduled_release_not_observed",
+                )
+                event.article_summary = event.summary
+                self.ingest(event, filters)
+            with self.db:
+                self.db.execute(
+                    "UPDATE expected_releases SET alerted_at=? WHERE release_key=?",
+                    (now.isoformat(), row["release_key"]),
+                )

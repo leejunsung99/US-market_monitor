@@ -1,0 +1,10 @@
+# Only public official endpoints verified without account registration.
+sources:
+  - {name: nvidia, kind: rss, url: 'https://nvidianews.nvidia.com/releases.xml', hosts: [nvidianews.nvidia.com, blogs.nvidia.com], ticker: NVDA}
+  - {name: amd, kind: rss, url: 'https://ir.amd.com/news-events/press-releases/rss', hosts: [ir.amd.com, www.amd.com], ticker: AMD}
+  - {name: intel, kind: rss, url: 'https://www.intc.com/news-events/press-releases/rss', hosts: [www.intc.com, newsroom.intel.com, www.intel.com], ticker: INTC}
+  - {name: qualcomm, kind: rss, url: 'https://investor.qualcomm.com/rss/pressrelease.aspx', hosts: [investor.qualcomm.com, www.qualcomm.com], ticker: QCOM}
+  - {name: apple, kind: rss, url: 'https://www.apple.com/newsroom/rss-feed.rss', hosts: [www.apple.com], ticker: AAPL}
+  - {name: google, kind: rss, url: 'https://blog.google/rss/', hosts: [blog.google], ticker: GOOGL}
+  - {name: tsmc, kind: tsmc, url: 'https://pr.tsmc.com/english', hosts: [pr.tsmc.com], ticker: TSM}
+  - {name: bis, kind: bis, url: 'https://www.bis.gov/news-updates', hosts: [www.bis.gov, media.bis.gov]}

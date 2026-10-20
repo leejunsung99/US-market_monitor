@@ -1,5 +1,5 @@
 # GrowthResearch US Market Radar
-# SEC 기업 공시 및 Finnhub 기업 뉴스 모니터링 대상 — 총 37개 종목
+# SEC 기업 공시 및 Finnhub 기업 뉴스 모니터링 대상 — 총 38개 종목
 companies:
   # 1. 빅테크 (6)
   AAPL: {aliases: [Apple, 애플], industry: 빅테크}
@@ -21,7 +21,8 @@ companies:
   KLAC: {aliases: [KLA Corporation, KLA, 케이엘에이], industry: AI·반도체·장비}
   ARM: {aliases: [Arm Holdings, Arm 홀딩스, 암 홀딩스], industry: AI·반도체·장비}
   QCOM: {aliases: [Qualcomm, 퀄컴], industry: AI·반도체·장비}
-  # 3. 소프트웨어·인프라 (3)
+  # 3. 소프트웨어·인프라 (4)
+  CRWV: {aliases: [CoreWeave, Coreweave, "\uCF54\uC5B4\uC704\uBE0C"], industry: infrastructure}
   ORCL: {aliases: [Oracle, 오라클], industry: 소프트웨어·인프라}
   PLTR: {aliases: [Palantir, 팔란티어], industry: 소프트웨어·인프라}
   CRM: {aliases: [Salesforce, 세일즈포스], industry: 소프트웨어·인프라}

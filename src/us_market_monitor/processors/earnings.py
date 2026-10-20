@@ -30,7 +30,7 @@ def earnings_facts(event):
                     flags=re.I,
                 )[0]
                 numbers = re.findall(
-                    r"(?:\$|USD\s*)(\d[\d,]*(?:\.\d+)?)\s*(trillion|billion|million|bn|b|m)?\b",
+                    r"(?<![A-Za-z])(?:US\$|\$|USD\s*)(\d[\d,]*(?:\.\d+)?)\s*(trillion|billion|million|bn|b|m)?\b",
                     nearby,
                     re.I,
                 )
@@ -50,7 +50,9 @@ def earnings_facts(event):
                 if values:
                     key = f"{context}:{name}"
                     metrics[key] = sorted(set(values + metrics.get(key, [])))
-        for match in re.finditer(r"\$(\d[\d,]*(?:\.\d+)?)\s*(?:a|per)\s+share\b", sentence, re.I):
+        for match in re.finditer(
+            r"(?<![A-Za-z])(?:US\$|\$)(\d[\d,]*(?:\.\d+)?)\s*(?:a|per)\s+share\b", sentence, re.I
+        ):
             metrics[f"{context}:eps"] = [
                 format(Decimal(match[1].replace(",", "")).normalize(), "f")
             ]

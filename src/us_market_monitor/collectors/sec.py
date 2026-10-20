@@ -9,6 +9,7 @@ from bs4 import BeautifulSoup
 
 from us_market_monitor.database.models import Event
 from us_market_monitor.http import FetchError
+from us_market_monitor.processors.briefing import select_points
 from us_market_monitor.processors.normalizer import parse_time, plain_text
 
 log = logging.getLogger(__name__)
@@ -16,6 +17,28 @@ TICKERS_URL = "https://www.sec.gov/files/company_tickers.json"
 SUBMISSIONS = "https://data.sec.gov/submissions/CIK{cik:010d}.json"
 # Item numbers indicate candidates only. Body-based classification is still required.
 IMPORTANT_ITEMS = {"1.01", "1.02", "2.01", "2.02", "2.05", "2.06", "8.01"}
+
+
+def filing_text(html):
+    soup = BeautifulSoup(html, "html.parser")
+    for node in soup.select(
+        'script, style, [style*="display:none"], [style*="display: none"], ix\\:header'
+    ):
+        node.decompose()
+    paragraphs = [plain_text(str(p)) for p in soup.select("p")]
+    full_text = plain_text(str(soup))
+    text = "\n".join(p for p in paragraphs if p)
+    if len(text) < len(full_text) / 2:
+        text = full_text
+    # The filing cover is identification, not the reported event.
+    item = re.search(r"\bItem\s+[128]\.\d{2}\b", text, re.I)
+    if item:
+        return text[item.start() :]
+    dateline = re.search(
+        r"\b[A-Z][A-Z .]{2,35},\s+[A-Z][a-z]+\s+\d{1,2},\s+20\d{2}\s*[–—-]\s*",
+        text[:1000],
+    )
+    return text[dateline.end() :] if dateline else text
 
 
 class SecMapping:
@@ -87,6 +110,7 @@ class SecCollector:
                 )
                 filing_html = self.client.get(url).text
                 body = plain_text(filing_html)
+                summary_parts = [filing_text(filing_html)]
                 # Foreign issuer 6-K and many 8-K primary documents are cover pages.
                 # Follow up to two explicitly attached 99.x HTML exhibits, within
                 # this accession directory only; no general web crawling.
@@ -104,7 +128,9 @@ class SecCollector:
                         exhibits.append(href)
                 for exhibit in exhibits[:2]:
                     exhibit_url = url.rsplit("/", 1)[0] + "/" + quote(exhibit)
-                    body += " " + plain_text(self.client.get(exhibit_url).text)
+                    exhibit_html = self.client.get(exhibit_url).text
+                    body += " " + plain_text(exhibit_html)
+                    summary_parts.append(filing_text(exhibit_html))
                 # Do not declare all 2.02 filings an earnings surprise.
                 # The classifier uses the source body's current-event language.
                 events.append(
@@ -117,6 +143,9 @@ class SecCollector:
                         published,
                         body=body[:150000],
                         related_tickers=(self.ticker,),
+                        article_summary="\n".join(
+                            select_points("\n".join(summary_parts[1:] + summary_parts[:1]))
+                        ),
                         metadata={
                             "form": form,
                             "items": sorted(items),

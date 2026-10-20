@@ -27,9 +27,30 @@ class Telegram:
     def send_article(self, event, *, test=False):
         from us_market_monitor.notifications.formatter import format_rich_article
 
-        return self._request(
-            "sendRichMessage", {"rich_message": format_rich_article(event, test=test)}
-        )
+        if event.event_type in {"economic_indicator", "monitor_alert"}:
+            from us_market_monitor.notifications.formatter import format_event
+
+            text = format_event(event)
+            return self.send(("[테스트] " if test else "") + text)
+
+        rich = format_rich_article(event, test=test)
+        try:
+            return self._request("sendRichMessage", {"rich_message": rich})
+        except DeliveryError as error:
+            if str(error) != "telegram_rejected_400":
+                raise
+        # A definitive rejection did not create a message. Retry without the
+        # remote photo, then use text if the rich layout itself is rejected.
+        if any(block["type"] == "photo" for block in rich["blocks"]):
+            rich["blocks"] = [block for block in rich["blocks"] if block["type"] != "photo"]
+            try:
+                return self._request("sendRichMessage", {"rich_message": rich})
+            except DeliveryError as error:
+                if str(error) != "telegram_rejected_400":
+                    raise
+        from us_market_monitor.notifications.formatter import format_event
+
+        return self.send(("[테스트] " if test else "") + format_event(event))
 
     def _request(self, method, payload):
         if self.stop.wait(max(0, self._next_send - time.monotonic())):

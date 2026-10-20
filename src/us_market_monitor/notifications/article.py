@@ -6,7 +6,22 @@ from urllib.parse import unquote, urljoin, urlsplit
 from bs4 import BeautifulSoup
 
 from us_market_monitor.http import FetchError, HttpClient
+from us_market_monitor.processors.briefing import prepare_brief
 from us_market_monitor.processors.normalizer import canonical_url, plain_text
+
+
+def article_text(page):
+    """Read article containers only; never summarize navigation or page chrome."""
+    article = page.select_one('[itemprop="articleBody"], .caas-body, article, #article')
+    if article:
+        for node in article.select("script, style, nav, aside, footer, form"):
+            node.decompose()
+        return "\n".join(
+            plain_text(str(p))
+            for p in article.select("p, li")
+            if not p.find_parent(["nav", "aside", "footer"])
+        )[:100000]
+    return ""
 
 
 def image_url(value):
@@ -26,28 +41,23 @@ def image_url(value):
     return url
 
 
-def source_excerpt(text, title="", limit=800):
-    text = plain_text(text)
-    sentences = re.split(r"(?<=[.!?])\s+", text)
-    selected = [
-        sentence.strip()
-        for sentence in sentences
-        if sentence.strip()
-        and sentence.strip() != title.strip()
-        and not re.search(
-            r"share on|subscribe|read more|click here|all rights reserved|privacy policy",
-            sentence,
-            re.I,
-        )
-    ]
-    result = " ".join(selected[:3]) or text or title
-    if len(result) > limit:
-        result = result[: limit - 1].rsplit(" ", 1)[0] + "…"
-    return result
-
-
 def enrich_article(event, *, client=None, stop=None):
     event.image_url = image_url(event.image_url)
+    if event.event_type == "monitor_alert":
+        return event
+    if event.source in {
+        "SEC EDGAR",
+        "BLS",
+        "BEA",
+        "Census",
+        "DOL",
+        "EIA",
+        "BIS",
+    } or event.source.startswith("Official/"):
+        # The SEC collector already reads the filing and permitted exhibits using
+        # its identifying User-Agent. Avoid a second, unidentified cover-page fetch.
+        prepare_brief(event)
+        return event
     client = client or HttpClient(
         timeout=15, attempts=1, spacing=1, stop=stop, headers={"User-Agent": "USMarketRadar/0.2"}
     )
@@ -60,27 +70,20 @@ def enrich_article(event, *, client=None, stop=None):
             if candidate:
                 event.image_url = candidate
                 break
-        if event.source == "Federal Reserve":
-            article = page.select_one("#article")
-            if article:
-                paragraphs = [plain_text(str(p)) for p in article.select("p")]
-                substantive = [
-                    p
-                    for p in paragraphs
-                    if len(p) > 100
-                    and not re.search(
-                        r"For media inquiries|Last Update|For release at|Share|Attachments", p, re.I
-                    )
-                ]
-                event.article_summary = source_excerpt(" ".join(substantive[:2]), event.title)
+        if event.source != "SEC EDGAR":
+            text = article_text(page)
+            if text:
+                # Complete article paragraphs take priority over clipped API teasers.
+                if not prepare_brief(event, text):
+                    event.article_summary = event.summary
         if not event.article_summary or event.article_summary.strip() == event.title.strip():
             description = page.select_one(
                 'meta[property="og:description"],meta[name="description"]'
             )
             if description:
-                event.article_summary = source_excerpt(description.get("content", ""), event.title)
+                event.article_summary = description.get("content", "")
     except (FetchError, ValueError):
         # Source metadata failure must not suppress the news or fabricate an image.
         pass
-    event.article_summary = source_excerpt(event.article_summary or event.summary, event.title)
+    prepare_brief(event)
     return event

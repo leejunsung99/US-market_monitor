@@ -10,7 +10,10 @@ def identities(event):
     namespace = "finnhub" if event.source.startswith("Finnhub/") else event.source
     return [
         digest(f"id:{namespace}:{event.source_event_id}"),
-        digest(f"url:{event.source_url}"),
+        digest(
+            f"url:{event.source_url}"
+            + (":" + event.source_event_id if event.event_type == "economic_indicator" else "")
+        ),
         digest(f"title:{normalized_title(event.title)}:{event.published_at.date()}"),
     ]
 

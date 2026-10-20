@@ -13,7 +13,8 @@ def test_rich_article_order_and_source_only(event_factory, monkeypatch):
     event.image_url = "https://example.com/article.jpg"
     blocks = format_rich_article(event)["blocks"]
     assert [b["type"] for b in blocks] == ["heading", "photo", "paragraph", "footer"]
-    assert blocks[2]["text"] == "Publisher facts. Another fact."
+    assert "• 핵심 발표: Publisher facts." in blocks[2]["text"]
+    assert "\n• 주요 내용: Another fact." in blocks[2]["text"]
     assert blocks[3]["text"][1]["url"] == event.source_url
     calls = []
 

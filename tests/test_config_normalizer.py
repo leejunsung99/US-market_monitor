@@ -23,9 +23,21 @@ def clean_env(monkeypatch):
         "WATCHLIST_PATH",
         "FILTERS_PATH",
         "LOG_LEVEL",
+        "ECONOMIC_ENABLED",
+        "ECONOMIC_INTERVAL_SECONDS",
+        "ECONOMIC_INITIAL_LOOKBACK_HOURS",
+        "BLS_CPI_RSS_URL",
+        "BLS_PPI_RSS_URL",
+        "BLS_EMPLOYMENT_RSS_URL",
+        "BEA_RSS_URL",
     ]
     for name in names:
         monkeypatch.delenv(name, raising=False)
+    # Tests below isolate the original optional sources. Economic coverage has
+    # dedicated tests and is enabled by default in the application.
+    monkeypatch.setenv("ECONOMIC_ENABLED", "false")
+    monkeypatch.setenv("PUBLIC_SOURCES_ENABLED", "false")
+    monkeypatch.setenv("RELEASE_MONITOR_ENABLED", "false")
 
 
 def test_missing_optional_keys_disables_sources():
@@ -46,6 +58,9 @@ def test_missing_optional_keys_disables_sources():
         ("FED_INTERVAL_SECONDS", "0"),
         ("FED_INTERVAL_SECONDS", "nan"),
         ("FED_ENABLED", "typo"),
+        ("ECONOMIC_ENABLED", "typo"),
+        ("ECONOMIC_INTERVAL_SECONDS", "0"),
+        ("BLS_CPI_RSS_URL", "https://example.com/feed"),
     ],
 )
 def test_invalid_settings_fail_without_secret_values(monkeypatch, name, value):

@@ -68,6 +68,39 @@ def test_translation_failure_does_not_block_news(monkeypatch, event_factory):
     assert not event.translation_hash
 
 
+def test_filing_repeated_numbers_and_overlapping_tokens(monkeypatch, event_factory):
+    from bs4 import BeautifulSoup
+
+    event = event_factory(
+        "TSM 6-K 공시",
+        summary="EX-99.1 2 EX-99.1 Document reports EPS of NT$29.43 in 2026, compared with 2026.",
+        related_tickers=("TSM",),
+    )
+
+    def post(*args, **kwargs):
+        payload = kwargs["json"]
+        tokens = [
+            span.get_text()
+            for item in payload
+            for span in BeautifulSoup(item["Text"], "html.parser").select("span")
+        ]
+        assert "99.1 D" not in tokens
+        return response([item["Text"] for item in payload])
+
+    monkeypatch.setattr(requests, "post", post)
+    assert translator().translate(event)
+
+
+def test_repeated_filing_number_cannot_disappear(monkeypatch, event_factory):
+    event = event_factory("TSM 6-K 공시", summary="Exhibit 99.1 references Exhibit 99.1.")
+    monkeypatch.setattr(
+        requests,
+        "post",
+        lambda *a, **kw: response(["TSM 6-K 공시", "첨부 99.1을 참조합니다."]),
+    )
+    assert not translator().translate(event)
+
+
 def test_translation_saved_and_reused(repo, classifier, filters, event_factory, monkeypatch):
     event = classifier.classify(event_factory())
     monkeypatch.setattr(

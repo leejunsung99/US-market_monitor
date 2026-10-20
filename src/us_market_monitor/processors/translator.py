@@ -3,12 +3,13 @@
 import logging
 import re
 import time
+from collections import Counter
 from html import escape
 
 import requests
 
-from us_market_monitor.notifications.article import source_excerpt
-from us_market_monitor.processors.normalizer import digest, plain_text
+from us_market_monitor.processors.briefing import brief_points, translation_fingerprint
+from us_market_monitor.processors.normalizer import plain_text
 
 log = logging.getLogger(__name__)
 
@@ -21,15 +22,15 @@ class Translator:
         self.disabled_until = 0
 
     def translate(self, event):
-        texts = [
-            event.title[:350],
-            source_excerpt(event.article_summary or event.summary, event.title),
-        ]
-        fingerprint = digest("azure-nmt-ko-v1:" + "\n".join(texts))
+        if event.event_type in {"economic_indicator", "monitor_alert"}:
+            return False  # Economic facts use verified templates or official source excerpts.
+        points = brief_points(event)
+        texts = [event.title[:350], *points]
+        fingerprint = translation_fingerprint(event)
         if event.translation_hash == fingerprint and event.title_ko and event.summary_ko:
             return True
         event.title_ko = event.summary_ko = event.translation_hash = ""
-        if not self.key or time.monotonic() < self.disabled_until:
+        if not points or not self.key or time.monotonic() < self.disabled_until:
             return False
         tickers = "|".join(
             re.escape(t)
@@ -38,7 +39,9 @@ class Translator:
             )
         )
         pattern = (
-            r"(?:[$€£]\s*)?\d[\d,]*(?:\.\d+)?(?:\s*(?:billion|million|trillion|bn|percent|%))?"
+            r"\b(?:8-K|6-K)(?:/A)?\b|(?<!\w)(?:(?:(?:US|NT|HK|A|C)?\$|[€£])\s*)?[−-]?\d[\d,]*(?:\.\d+)?"
+            r"(?:\s*[-–—]\s*\d[\d,]*(?:\.\d+)?)?"
+            r"(?:\s*(?:(?:billion|million|trillion|bn|percent|times|[xD])\b|[×%]))?"
         )
         if tickers:
             pattern += r"|(?<!\w)(?:" + tickers + r")(?!\w)"
@@ -72,18 +75,35 @@ class Translator:
             if response.status_code != 200:
                 raise ValueError("provider_rejected")
             data = response.json()
-            if not isinstance(data, list) or len(data) != 2:
+            if not isinstance(data, list) or len(data) != len(texts):
                 raise ValueError("invalid_response")
             result = [plain_text(item["translations"][0]["text"]) for item in data]
             for text, tokens in zip(result, protected, strict=True):
-                if not text or any(
-                    text.count(token) < tokens.count(token) for token in set(tokens)
-                ):
+                # Count non-overlapping matches, longest first. A value like
+                # "2026" must not also be counted inside protected "2026,".
+                alternatives = "|".join(
+                    re.escape(token) for token in sorted(set(tokens), key=len, reverse=True)
+                )
+                actual = (
+                    Counter(
+                        re.findall(
+                            r"(?<![A-Za-z0-9])(?:" + alternatives + r")(?![A-Za-z0-9])",
+                            text,
+                        )
+                    )
+                    if tokens
+                    else Counter()
+                )
+                if not text or actual != Counter(tokens):
                     raise ValueError("protected_value_changed")
-        except (requests.RequestException, ValueError, KeyError, TypeError, IndexError):
+        except (requests.RequestException, ValueError, KeyError, TypeError, IndexError) as error:
             self.disabled_until = time.monotonic() + 60
-            log.warning("Translation unavailable or invalid; sending original English text")
+            reason = str(error) if isinstance(error, ValueError) else type(error).__name__
+            # Never log provider response bodies, request URLs or credentials.
+            if reason not in {"provider_rejected", "invalid_response", "protected_value_changed"}:
+                reason = type(error).__name__
+            log.warning("Translation failed (%s); sending original English text", reason)
             return False
-        event.title_ko, event.summary_ko = result
+        event.title_ko, event.summary_ko = result[0], "\n".join(result[1:])
         event.translation_hash = fingerprint
         return True

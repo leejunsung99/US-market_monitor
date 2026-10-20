@@ -1,5 +1,37 @@
-# Precision-first: a company name or topic keyword alone cannot pass.
-rules_version: '2026-10-14.1'
+# Broader trial coverage: retain event evidence, relax watchlist and size gates.
+rules_version: '2026-10-19.3'
+industry_outlook:
+  enabled: true
+  metrics:
+    growth: '\b(?:profit|earnings|revenue|sales)\b.{0,25}\b(?:growth|momentum)\b|(?:이익|순익|매출|실적).{0,15}(?:성장|증가율|증가세)'
+    margins: '\b(?:(?:gross|operating|profit) margins?|profitability)\b|영업이익률|매출총이익률|수익성|마진'
+    pricing: '\b(?:DRAM|NAND|memory|chip|oil|gas|freight|commodity|contract)\b.{0,35}\b(?:prices?|pricing)\b|(?:메모리|반도체|원유|운임|계약).{0,15}가격'
+    demand_supply: '\b(?:demand|orders?|inventories|inventory|oversupply|overcapacity|supply glut)\b|수요|수주|재고|공급과잉|공급 과잉'
+  changes:
+    - '\b(?:slows?|slowed|slowing|decelerat\w*|weakens?|weakened|weakening|shrinks?|shrank|shrinking|compress\w*|declin\w*|drops?|dropped|falls?|falling|fell|surges?|surged|jumps?|jumped|accelerat\w*|strengthen\w*|rises?|rising|rose|grows?|grew|growing|rebounds?|rebounded|improv\w*|increas\w*|decreas\w*|collaps\w*|halv\w*|doubl\w*)\b'
+    - '둔화|급감|급증|압박|축소|악화|개선|상승|하락|감소|증가|확대|과잉'
+  material_signals:
+    - '\d[\d,.]*(?:\s*[-–]\s*\d[\d,.]*)?\s*%|[$€£]\s*\d[\d,.]*'
+    - '\b(?:sharply|steeply|significantly|record|collaps\w*|halv\w*|doubl\w*)\b|급감|급증|사상 최대|사상 최저|반토막'
+untracked_event_types:
+  - cybersecurity_incident
+  - legal_regulatory
+  - financial_distress
+  - core_product
+  - acquisition
+  - contract_investment
+  - production_disruption
+  - business_development
+official_alert_scope: all
+lifestyle_headlines:
+  - '\b(halloween|costume|fashion|beauty|holiday gift).{0,100}\b(trends?|ideas?|inspiration|collection|guide|discover|explore)\b'
+  - '\b(trends?|ideas?|inspiration|discover|explore|check out).{0,100}\b(halloween|costumes?|fashion|beauty)\b'
+  - '\b(collection|designer|artist|photographer|filmmaker).{0,120}\b(with|using|on|powered by)\s+(?:the\s+)?(?:new\s+)?(iPad|iPhone|Mac|Pixel)\b'
+  - '\b(customer stor(?:y|ies)|creator spotlight|behind the scenes|tips and tricks|how to use)\b'
+  - '(할로윈|핼러윈|패션|뷰티).{0,60}(트렌드|유행|아이디어|컬렉션|추천|가이드)'
+  - '(컬렉션|디자이너|사진작가|아티스트).{0,80}(아이패드|아이폰|맥북|픽셀).{0,30}(함께|활용|사용)'
+historical_headlines:
+  - '\b(last year|last month|a year ago|previously announced|retrospective)\b|과거 발표|기존 발표 재조명'
 commentary_url_pattern: '/(?:video|videos|podcast|podcasts)/'
 commentary_patterns:
   - '\b(hosts?|anchors?|panelists?).{0,100}(discuss|dissect|break down|weigh in)'
@@ -16,7 +48,6 @@ score_weights:
 hard_exclusions:
   - '\bis .{0,90}(right to|worth buying|a buy)\b|should investors|매수해야 할까'
   - 'price target|target price|analyst rating|upgrades? to buy|downgrades? to|stock picks|stocks? to buy|sponsored|advertorial|worth buying|buy (on )?the dip'
-  - '\b(last year|last month|a year ago|previously announced|retrospective)\b|과거 발표|기존 발표 재조명'
 hard_speculation:
   - '\b(in discussions?|discussing an acquisition|seeks to acquire)\b'
   - '\b(rumou?rs?|reportedly|unconfirmed|in talks|in negotiations|negotiating|might|could|may|expected to|would)\b|루머|미확인|추측|협상 중'
@@ -48,11 +79,11 @@ industry_rules:
     patterns:
       - '\b(begins?|began|starts?|started|commences?|commenced|announces?|announced).{0,40}mass production'
       - '(반도체|디램|메모리).{0,25}양산.{0,10}(시작|개시|발표)'
-high_threshold: 4
+high_threshold: 2
 critical_threshold: 7
 dedup_window_hours: 36
 dedup_similarity: 0.62
-minimum_deal_usd: 1000000000
+minimum_deal_usd: 500000000
 material_scale_patterns:
   - '\b(major|landmark|strategic|giant|mega|transformative)\b|대규모|핵심 사업'
 exclusions:
@@ -62,7 +93,7 @@ exclusions:
   - '\b(last year|last month|a year ago|previously announced|retrospective)\b|과거 발표|기존 발표 재조명'
 speculation:
   - '\b(in discussions?|discussing an acquisition|seeks to acquire)\b'
-  - '\b(could|may|might|rumou?r|reportedly|weighs|considers|considering|expected to|plans to|in talks|in negotiations|negotiating|preview|opinion|analysis|what to expect|would)\b'
+  - '\b(could|may|might|rumou?r|reportedly|weighs|considers|considering|expected to|in talks|in negotiations|negotiating|preview|opinion|analysis|what to expect|would)\b'
   - '검토 중|가능할까|전망한다|예상된다|루머|추측'
 critical_patterns:
   - 'emergency|unscheduled|unexpected|surprise|slashed|withdraws.{0,30}(guidance|outlook)|긴급|예상 밖'
@@ -75,6 +106,7 @@ rules:
     scope: policy
     patterns:
       - '(federal reserve|fomc|fed|연준).{0,90}(issues.{0,15}statement|raises.{0,25}rates|cuts.{0,25}rates|holds.{0,25}rates|announces.{0,30}(policy|liquidity|facility)|금리.{0,12}(결정|인하|인상))'
+      - '\bFOMC\b.{0,80}(statement|implementation note|projection materials|economic projections)'
   - type: export_restriction
     label: 수출규제 발표
     entity: export_controls
@@ -118,6 +150,7 @@ rules:
     scope: company
     patterns:
       - '(reports|announces|releases|posts).{0,60}(quarterly (results|earnings|revenue)|financial results|record (revenue|profit)|earnings beat|earnings miss)'
+      - '(reports|announces|releases|posts).{0,50}(first|second|third|fourth|Q[1-4]).{0,35}(quarter|results|earnings|EPS|revenue)'
       - '실적.{0,15}(발표|예상 상회|예상 하회)'
   - type: acquisition
     label: 인수합병 발표
@@ -131,6 +164,8 @@ rules:
     patterns:
       - '(signs|wins|secures|announces|invests|commits).{0,100}(billion|trillion|multi-billion).{0,60}(contract|deal|investment|factory|plant|data cent(er|re))'
       - '(signs|wins|secures).{0,40}(contract|deal).{0,40}(billion|trillion)'
+      - '\b(signs|wins|secures|announces|invests|commits)\b.{0,100}\b(?:million|billion|trillion)\b.{0,60}\b(contract|deal|investment|factory|plant|data cent(?:er|re))\b'
+      - '\b(signs|wins|secures)\b.{0,40}\b(contract|deal)\b.{0,40}\b(?:million|billion|trillion)\b'
   - type: production_disruption
     label: 생산·공급 차질
     scope: company
@@ -147,3 +182,43 @@ rules:
     scope: company
     patterns:
       - '(unveils|launches|announces).{0,60}(next-generation|breakthrough).{0,40}(gpu|semiconductor|chip architecture|ai accelerator)'
+      - '\b(introduces|unveils|launches|releases|announces).{0,35}\b(?:the |a )?new\b.{0,60}\b(iPhone|iPad|MacBook|Pixel|GPU|AI accelerator|CUDA-X|cuPotential|AI model|AI platform)\b'
+      - '\b(?:introduces|unveils|launches|releases|announces|introduced|unveiled|launched|released|announced)\b.{0,70}\b(?:new|next.generation)\b.{0,60}\b(?:AI model|cloud platform|security platform|AI chip|electric vehicle|robot|battery|drug|vaccine)\b'
+
+
+  - type: core_product
+    label: 자동차·자율주행 핵심 제품 공개
+    scope: company
+    evidence_actor_required: true
+    patterns:
+      - '\b(?:unveils?|unveiled|launches|launched|introduces|introduced|reveals?|revealed)\b.{0,100}\b(?:Roadster|Cybercab|Cybertruck|Robotaxi|Optimus|Full Self.Driving|FSD)\b'
+  - type: cybersecurity_incident
+    label: 보안 침해·정보 유출
+    scope: company
+    evidence_actor_required: true
+    patterns:
+      - '\b(?:confirms?|confirmed|discloses?|disclosed|reports?|reported|suffers?|suffered)\b.{0,100}\b(?:data breach|security breach|cyberattack|ransomware|data theft|unauthorized access)\b'
+      - '\b(?:hackers?|attackers?)\b.{0,60}\b(?:steal|stole|stolen|breach|breached|leak|leaked)\b.{0,90}\b(?:data|systems?|credentials?|records?)\b'
+  - type: legal_regulatory
+    label: 안전 조사·리콜·규제 조치
+    scope: company
+    evidence_actor_required: true
+    patterns:
+      - '\b(?:NHTSA|FTC|DOJ|regulators?|authorities|Justice Department)\b.{0,60}\b(?:opens?|opened|launches|launched|begins?|began|expands?|expanded)\b.{0,50}\b(?:probe|investigation)\b'
+      - '\b(?:recalls?|recalled)\b.{0,45}\b[\d,]+\s+(?:vehicles?|cars?|trucks?|products?)\b'
+  - type: financial_distress
+    label: 채무 불이행·신용등급 하향
+    scope: company
+    evidence_actor_required: true
+    patterns:
+      - '\b(?:defaults?|defaulted)\s+on\b.{0,50}\b(?:debt|bonds?|loans?|payment)\b'
+      - '\b(?:files?|filed)\s+for\s+(?:bankruptcy|Chapter 11)\b'
+      - '\b(?:Moody.s|S&P|Fitch)\b.{0,80}\b(?:downgrades?|downgraded|cuts?|cut)\b.{0,80}\b(?:credit|rating)\b'
+      - '\b(?:bond yields?|borrowing costs?|credit default swaps?|default risk)\b.{0,60}\b(?:surges?|surged|jumps?|jumped|soars?|soared|record high)\b'
+  - type: business_development
+    label: 사업 확장·주요 제휴 발표
+    scope: company
+    evidence_actor_required: true
+    patterns:
+      - '\b(?:announces|announced|signs|signed|expands|expanded)\b.{0,70}\b(?:strategic partnership|multiyear partnership|multi.year partnership|licensing agreement|commercial agreement)\b'
+      - '\b(?:opens|opened|launches|launched|expands|expanded)\b.{0,70}\b(?:data cent(?:er|re)|manufacturing facility|battery factory|chip factory)\b'
