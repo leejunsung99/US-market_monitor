@@ -1,4 +1,4 @@
-"""Replay the latest five sent alerts in the approved layout, to test only."""
+"""Replay the latest five sent alerts in the approved layout, to an explicitly selected channel."""
 
 import argparse
 import json
@@ -56,7 +56,7 @@ def build_preview(event, event_id):
             if fragment not in record["source_text"]:
                 raise ValueError("Missing earnings-call evidence")
         sections["향후 전망"].append("커머스 수수료·구독·API·기업 서비스를 통한 수익화 구상")
-        title = "메타(META) | 어닝콜 요약"
+        title = "메타(META) | 어닝콜 관련 보도"
     elif event_id == 93:
         if "revenue flattened out in the third quarter" not in text or "launched robotaxi service and humanoid production" not in text:
             raise ValueError("Tesla article evidence changed")
@@ -145,10 +145,11 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--send", action="store_true")
     parser.add_argument("--event-ids", type=int, nargs="+", default=[90, 91, 92, 93, 94])
+    parser.add_argument("--target", choices=["test", "main"], default="test")
     args = parser.parse_args()
     config = Config.load(root=ROOT)
-    target = os.getenv("TELEGRAM_TEST_CHAT_ID", "").strip()
-    if not target or target == config.telegram_chat_id:
+    target = config.telegram_chat_id if args.target == "main" else os.getenv("TELEGRAM_TEST_CHAT_ID", "").strip()
+    if not target or (args.target == "test" and target == config.telegram_chat_id):
         raise ValueError("Separate test channel required")
     output = ROOT / "data/recent-compact"
     output.mkdir(exist_ok=True)
@@ -174,7 +175,7 @@ def main():
             telegram = Telegram(config.telegram_token, target)
             for event_id, message, photo in reversed(prepared):
                 message_id = send_photo(config, target, photo, message) if photo else telegram.send(message)
-                receipt = {"event_id": event_id, "message_id": message_id, "photo": bool(photo)}
+                receipt = {"event_id": event_id, "message_id": message_id, "photo": bool(photo), "target": args.target}
                 with (output / "receipts.jsonl").open("a", encoding="utf-8") as log:
                     log.write(json.dumps(receipt) + "\n")
                 print(json.dumps(receipt), flush=True)

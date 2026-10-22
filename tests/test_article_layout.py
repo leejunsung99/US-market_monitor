@@ -24,8 +24,11 @@ def test_rich_article_order_and_source_only(event_factory, monkeypatch):
 
     monkeypatch.setattr(requests, "post", post)
     assert Telegram("test", "chat").send_article(event) == 12
-    assert calls[0][0].endswith("/sendRichMessage")
-    assert calls[0][1]["rich_message"]["blocks"] == blocks
+    assert calls[0][0].endswith("/sendPhoto")
+    assert calls[0][1]["photo"] == event.image_url
+    assert "<b><u>🇺🇸" in calls[0][1]["caption"]
+    assert "📍핵심내용" in calls[0][1]["caption"]
+    assert "https://t.me/growth_us" in calls[0][1]["caption"]
 
 
 def test_publisher_photo_and_logo_exclusion(event_factory):

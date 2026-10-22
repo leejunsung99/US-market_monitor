@@ -25,32 +25,33 @@ class Telegram:
         )
 
     def send_article(self, event, *, test=False):
-        from us_market_monitor.notifications.formatter import format_rich_article
+        from us_market_monitor.notifications.article import image_url
+        from us_market_monitor.notifications.compact import format_compact_event
 
-        if event.event_type in {"economic_indicator", "monitor_alert"}:
-            from us_market_monitor.notifications.formatter import format_event
-
-            text = format_event(event)
-            return self.send(("[테스트] " if test else "") + text)
-
-        rich = format_rich_article(event, test=test)
-        try:
-            return self._request("sendRichMessage", {"rich_message": rich})
-        except DeliveryError as error:
-            if str(error) != "telegram_rejected_400":
-                raise
-        # A definitive rejection did not create a message. Retry without the
-        # remote photo, then use text if the rich layout itself is rejected.
-        if any(block["type"] == "photo" for block in rich["blocks"]):
-            rich["blocks"] = [block for block in rich["blocks"] if block["type"] != "photo"]
+        text = format_compact_event(event, test=test)
+        photo = image_url(event.image_url)
+        if photo and len(text.encode("utf-16-le")) // 2 <= 1024:
             try:
-                return self._request("sendRichMessage", {"rich_message": rich})
+                return self._request("sendPhoto", {"photo": photo, "caption": text,
+                                                   "parse_mode": "HTML"})
             except DeliveryError as error:
                 if str(error) != "telegram_rejected_400":
                     raise
-        from us_market_monitor.notifications.formatter import format_event
-
-        return self.send(("[테스트] " if test else "") + format_event(event))
+            return self.send(text)
+        if photo:
+            # A full caption cannot fit: publish the image followed by the complete
+            # card. After photo delivery, any failure must not replay the photo.
+            try:
+                self._request("sendPhoto", {"photo": photo})
+            except DeliveryError as error:
+                if str(error) != "telegram_rejected_400":
+                    raise
+                return self.send(text)
+            try:
+                return self.send(text)
+            except (DeliveryError, Stopped):
+                raise DeliveryError("partial_article_delivery", ambiguous=True) from None
+        return self.send(text)
 
     def _request(self, method, payload):
         if self.stop.wait(max(0, self._next_send - time.monotonic())):

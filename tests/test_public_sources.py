@@ -298,7 +298,8 @@ def test_rejected_image_falls_back_but_ambiguous_delivery_does_not(monkeypatch, 
 
     monkeypatch.setattr(client, "_request", request)
     assert client.send_article(event) == 99
-    assert not any(b["type"] == "photo" for b in calls[1][1]["rich_message"]["blocks"])
+    assert calls[1][0] == "sendMessage"
+    assert "<b><u>" in calls[1][1]["text"]
 
     def unknown(*args):
         raise DeliveryError("delivery_outcome_unknown", ambiguous=True)
