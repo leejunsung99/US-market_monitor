@@ -15,7 +15,9 @@ def test_only_important_events_persist(repo, classifier, filters, event_factory)
     assert repo.db.execute("SELECT count(*) FROM seen").fetchone()[0] == 2
     columns = [r[1] for r in repo.db.execute("PRAGMA table_info(seen)")]
     assert columns == ["observation_hash", "observed_at", "rules_version"]
-    assert "body" not in [r[1] for r in repo.db.execute("PRAGMA table_info(events)")]
+    # Important events retain fetched source text for complete re-summarization.
+    # Ordinary events above still leave only an observation hash.
+    assert "body" in [r[1] for r in repo.db.execute("PRAGMA table_info(events)")]
 
 
 def test_duplicate_across_publishers_and_restart(tmp_path, classifier, filters, event_factory):

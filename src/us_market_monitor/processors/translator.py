@@ -65,16 +65,31 @@ class Translator:
         if self.region and self.region.lower() != "global":
             headers["Ocp-Apim-Subscription-Region"] = self.region
         try:
-            response = requests.post(
-                self.endpoint + "/translate",
-                params={"api-version": "3.0", "from": "en", "to": "ko", "textType": "html"},
-                headers=headers,
-                json=payload,
-                timeout=(5, 10),
-            )
-            if response.status_code != 200:
-                raise ValueError("provider_rejected")
-            data = response.json()
+            batches, batch, size = [], [], 0
+            for item in payload:
+                item_size = len(item['Text'])
+                if batch and (size + item_size > 40000 or len(batch) >= 100):
+                    batches.append(batch)
+                    batch, size = [], 0
+                batch.append(item)
+                size += item_size
+            if batch:
+                batches.append(batch)
+            data = []
+            for batch in batches:
+                response = requests.post(
+                    self.endpoint + "/translate",
+                    params={"api-version": "3.0", "from": "en", "to": "ko", "textType": "html"},
+                    headers=headers,
+                    json=batch,
+                    timeout=(5, 10),
+                )
+                if response.status_code != 200:
+                    raise ValueError("provider_rejected")
+                items = response.json()
+                if not isinstance(items, list) or len(items) != len(batch):
+                    raise ValueError("invalid_response")
+                data.extend(items)
             if not isinstance(data, list) or len(data) != len(texts):
                 raise ValueError("invalid_response")
             result = [plain_text(item["translations"][0]["text"]) for item in data]

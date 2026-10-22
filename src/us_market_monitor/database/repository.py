@@ -83,6 +83,7 @@ class Repository:
                 "importance_score": "REAL NOT NULL DEFAULT 0",
                 "score_breakdown": "TEXT NOT NULL DEFAULT '{}'",
                 "article_summary": "TEXT NOT NULL DEFAULT ''",
+                "body": "TEXT NOT NULL DEFAULT ''",
                 "image_url": "TEXT NOT NULL DEFAULT ''",
                 "title_ko": "TEXT NOT NULL DEFAULT ''",
                 "summary_ko": "TEXT NOT NULL DEFAULT ''",
@@ -334,6 +335,7 @@ class Repository:
             row["source_url"],
             parse_time(row["published_at"]),
             detected_at=parse_time(row["detected_at"]),
+            body=optional('body', ''),
             metadata={
                 **json.loads(optional("source_metadata", "{}")),
                 "official": optional("evidence_level", "") == "official_source"
@@ -360,8 +362,9 @@ class Repository:
 
     def update_article(self, event_id, event):
         self.db.execute(
-            "UPDATE events SET article_summary=?,image_url=?,source_url=?,title_ko=?,summary_ko=?,translation_hash=?,source_metadata=? WHERE id=?",
+            "UPDATE events SET body=?,article_summary=?,image_url=?,source_url=?,title_ko=?,summary_ko=?,translation_hash=?,source_metadata=? WHERE id=?",
             (
+                event.body,
                 event.article_summary,
                 event.image_url,
                 event.source_url,

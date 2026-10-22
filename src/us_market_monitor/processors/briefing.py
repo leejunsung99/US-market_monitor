@@ -6,9 +6,7 @@ from difflib import SequenceMatcher
 
 from us_market_monitor.processors.normalizer import digest, plain_text
 
-VERSION = "source-brief-v2"
-MAX_POINTS = 4
-MAX_CHARS = 2400
+VERSION = "source-brief-v3-material"
 
 NOISE = re.compile(
     r"share on|subscribe|read more|click here|all rights reserved|privacy policy|"
@@ -20,6 +18,13 @@ NOISE = re.compile(
     r"^Item\s+\d\.\d{2}\b|exhibit number|press release of the company, dated|"
     r"financial data supplement.*quarter ended|for media inquiries|last update|for release at",
     re.I,
+)
+PROMOTION = re.compile(
+    r'marketbeat all access|lock in .{0,40}access|should you invest|'
+    r'get every upgrade|this instant news alert was generated|'
+    r'view the five stocks|this report names|free report|'
+    r'preferred source on google|sign up for|'
+    r'^(?:about .{0,70} )?.{0,70} is a technology company that develops', re.I,
 )
 ACTION = re.compile(
     r"\b(?:announce\w*|introduc\w*|launch\w*|report\w*|release\w*|adopt\w*|"
@@ -72,9 +77,7 @@ def sentences(text, title=""):
         paragraph = re.sub(r"(?<=[a-z0-9])\.(?=[A-Z][a-z])", ". ", paragraph)
         for sentence in re.split(r"(?<=[.!?。])\s+(?=[A-Z0-9\"“가-힣])", paragraph):
             sentence = sentence.strip().lstrip("• ")
-            if not sentence or NOISE.search(sentence):
-                continue
-            if re.search(r'\bsaid[, :]\s*[“"]', sentence, re.I):
+            if not sentence or NOISE.search(sentence) or PROMOTION.search(sentence):
                 continue
             if re.match(
                 r"\d+\s+(?:\d+\s+)?(?:Includes|Excludes|See|Refer|Amounts|Reflects)\b",
@@ -84,7 +87,7 @@ def sentences(text, title=""):
                 continue
             if title and sentence.casefold().rstrip(".") == title.casefold().rstrip("."):
                 continue
-            if len(sentence) < 10 or len(sentence) > 650:
+            if len(sentence) < 10:
                 continue
             complete = bool(
                 re.search(r"[.!?。][\"”’']?$|(?:습니다|이다|했다|한다|예정)\.?$", sentence)
@@ -110,18 +113,18 @@ def select_points(text, title=""):
         candidates.append((index, sentence, score))
     if not candidates:
         return []
-    # Lead with the announcement, then prefer material figures and diverse facts.
+    # Preserve every distinct material fact; never stop at a sentence/character quota.
     first = next((c for c in candidates if ACTION.search(c[1])), candidates[0])
-    chosen, total = [first], len(first[1])
-    for candidate in sorted(candidates, key=lambda c: (-c[2], c[0])):
-        if candidate == first or total + len(candidate[1]) > MAX_CHARS:
+    material = [c for c in candidates if c[2] >= 2 or topic(c[1]) != '주요 내용'
+                or re.search(r'cost|cash|margin|risk|constraint|capacity|regulat|litigat|'
+                             r'monetiz|retention|engagement|비용|위험|제약|현금|이익률', c[1], re.I)]
+    chosen = [first]
+    for candidate in material or candidates:
+        if candidate == first:
             continue
         if any(duplicate_fact(candidate[1], c[1]) for c in chosen):
             continue
         chosen.append(candidate)
-        total += len(candidate[1])
-        if len(chosen) == MAX_POINTS:
-            break
     return [first[1], *(c[1] for c in sorted(chosen[1:]))]
 
 
@@ -139,8 +142,10 @@ def duplicate_fact(left, right):
 
 
 def prepare_brief(event, text=None):
-    """Store only short source excerpts, with one fact per line for translation."""
-    source = text if text is not None else (event.article_summary or event.summary)
+    """Keep the fetched source and select material excerpts without a count quota."""
+    if text is not None:
+        event.body = text
+    source = text if text is not None else (event.article_summary or event.body or event.summary)
     points = select_points(source, event.title)
     event.article_summary = "\n".join(points)
     return points

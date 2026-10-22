@@ -1,5 +1,6 @@
 import threading
 import time
+from html import escape, unescape
 
 import requests
 
@@ -10,6 +11,33 @@ class DeliveryError(RuntimeError):
     def __init__(self, code, *, retryable=False, ambiguous=False, retry_after=0):
         super().__init__(code)
         self.retryable, self.ambiguous, self.retry_after = retryable, ambiguous, retry_after
+
+
+def split_card(text, budget=3800):
+    """Compact cards have self-contained heading lines and escaped body lines."""
+    chunks, current = [], ''
+    for line in text.split('\n'):
+        parts = [line]
+        if len(line.encode('utf-16-le')) // 2 > budget:
+            parts, part = [], ''
+            # Oversized body/URL lines contain escaped text, never HTML headings.
+            for char in unescape(line):
+                atom = escape(char)
+                if len((part + atom).encode('utf-16-le')) // 2 > budget:
+                    parts.append(part)
+                    part = ''
+                part += atom
+            parts.append(part)
+        for part in parts:
+            candidate = current + ('\n' if current else '') + part
+            if len(candidate.encode('utf-16-le')) // 2 > budget:
+                chunks.append(current)
+                current = part
+            else:
+                current = candidate
+    if current:
+        chunks.append(current)
+    return chunks
 
 
 class Telegram:
@@ -29,7 +57,21 @@ class Telegram:
         from us_market_monitor.notifications.compact import format_compact_event
 
         text = format_compact_event(event, test=test)
-        photo = image_url(event.image_url)
+        return self._send_card(text, image_url(event.image_url))
+
+    def _send_parts(self, text, *, delivered=False):
+        last_id = None
+        for part in split_card(text):
+            try:
+                last_id = self.send(part)
+                delivered = True
+            except (DeliveryError, Stopped):
+                if delivered:
+                    raise DeliveryError('partial_article_delivery', ambiguous=True) from None
+                raise
+        return last_id
+
+    def _send_card(self, text, photo):
         if photo and len(text.encode("utf-16-le")) // 2 <= 1024:
             try:
                 return self._request("sendPhoto", {"photo": photo, "caption": text,
@@ -37,7 +79,7 @@ class Telegram:
             except DeliveryError as error:
                 if str(error) != "telegram_rejected_400":
                     raise
-            return self.send(text)
+            return self._send_parts(text)
         if photo:
             # A full caption cannot fit: publish the image followed by the complete
             # card. After photo delivery, any failure must not replay the photo.
@@ -46,12 +88,9 @@ class Telegram:
             except DeliveryError as error:
                 if str(error) != "telegram_rejected_400":
                     raise
-                return self.send(text)
-            try:
-                return self.send(text)
-            except (DeliveryError, Stopped):
-                raise DeliveryError("partial_article_delivery", ambiguous=True) from None
-        return self.send(text)
+                return self._send_parts(text)
+            return self._send_parts(text, delivered=True)
+        return self._send_parts(text)
 
     def _request(self, method, payload):
         if self.stop.wait(max(0, self._next_send - time.monotonic())):

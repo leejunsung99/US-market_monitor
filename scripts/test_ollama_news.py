@@ -78,11 +78,11 @@ def main():
             if row is None:
                 raise ValueError("event_not_found")
             event = repo.row_event(row)
-            source = event.article_summary or event.summary
+            source = event.body or event.article_summary or event.summary
             # Retain the complete statistical paragraph, including revision/error band.
             if event.event_type == "economic_indicator":
                 source = event.summary
-            source = (event.title + "\n" + source)[:15000]
+            source = event.title + "\n" + source
             key = hashlib.sha256((PROMPT_VERSION + model + event.title + source).encode()).hexdigest()
             path = output / f"event-{event_id}.json"
             if args.send_existing:

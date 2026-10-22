@@ -16,11 +16,20 @@ def article_text(page):
     if article:
         for node in article.select("script, style, nav, aside, footer, form"):
             node.decompose()
-        return "\n".join(
-            plain_text(str(p))
-            for p in article.select("p, li")
-            if not p.find_parent(["nav", "aside", "footer"])
-        )[:100000]
+        paragraphs = []
+        for node in article.select('p, li, h2, h3'):
+            text = plain_text(str(node))
+            if node.name in {'h2', 'h3'}:
+                if re.match(r'About\s|Should You Invest|Featured Articles|Related (?:Stories|Articles|Videos)',
+                            text, re.I):
+                    break
+                continue
+            if node.find_parent(['nav', 'aside', 'footer']):
+                continue
+            if node.name == 'p' and node.find_parent('li'):
+                continue  # The enclosing list item already supplies this paragraph.
+            paragraphs.append(text)
+        return '\n'.join(paragraphs)[:100000]
     return ""
 
 
