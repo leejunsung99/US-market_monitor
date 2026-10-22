@@ -1,5 +1,6 @@
 ﻿import pytest
 
+
 @pytest.mark.parametrize('title,kind', [
  ('Tesla unveils new Roadster sports car','core_product'),
  ('Tesla revealed its Cybercab robotaxi','core_product'),
