@@ -171,7 +171,7 @@ def send(config, repo, limit, spacing, stop):
         config.telegram_token, config.telegram_chat_id, timeout=config.timeout, stop=stop
     )
     sent = 0
-    translator = Translator(config) if getattr(config, "translator_key", "") else None
+    translator = Translator(config) if hasattr(telegram, 'send_article') else None
     for index, row in enumerate(rows, 1):
         if stop.is_set() or not repo.claim(row["id"]):
             break
@@ -186,7 +186,8 @@ def send(config, repo, limit, spacing, stop):
             if hasattr(telegram, "send_article"):
                 event = enrich_article(repo.row_event(row), stop=stop)
                 if translator:
-                    translator.translate(event)
+                    if not translator.translate(event):
+                        raise DeliveryError('ollama_summary_pending', retryable=True, retry_after=60)
                 with repo.db:
                     repo.update_article(row["id"], event)
                 message_id = telegram.send_article(event, test=True)

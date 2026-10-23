@@ -54,9 +54,9 @@ class Config:
     max_attempts: int = 3
     max_notification_age: float = 24
     log_level: str = "INFO"
-    translator_key: str = field(default="", repr=False)
-    translator_region: str = "global"
-    translator_endpoint: str = "https://api.cognitive.microsofttranslator.com/"
+    ollama_base_url: str = 'http://127.0.0.1:11435'
+    ollama_model: str = 'qwen3.5:9b'
+    ollama_timeout: float = 600
     economic_enabled: bool = True
     economic_interval: float = 120
     economic_initial_lookback: float = 24
@@ -199,14 +199,11 @@ class Config:
         ua = os.getenv("SEC_USER_AGENT", "").strip()
         if ua and ("\n" in ua or "\r" in ua or not re.search(r"\S+@\S+\.\S+", ua)):
             raise ConfigError("SEC_USER_AGENT requires an application name and contact email")
-        if boolean("AI_SUMMARY_ENABLED", False):
-            raise ConfigError("AI summary is not implemented in v1; use AI_SUMMARY_ENABLED=false")
         level = os.getenv("LOG_LEVEL", "INFO").upper()
-        translator_endpoint = os.getenv(
-            "AZURE_TRANSLATOR_ENDPOINT", "https://api.cognitive.microsofttranslator.com/"
-        ).strip()
-        if translator_endpoint.rstrip("/") != "https://api.cognitive.microsofttranslator.com":
-            raise ConfigError("Use the Azure Translator global HTTPS endpoint")
+        ollama_url = os.getenv('OLLAMA_BASE_URL', 'http://127.0.0.1:11435').strip().rstrip('/')
+        parts = urlsplit(ollama_url)
+        if parts.scheme != 'http' or parts.hostname not in {'127.0.0.1', 'localhost', '::1'}:
+            raise ConfigError('OLLAMA_BASE_URL must be local HTTP')
         if level not in {"DEBUG", "INFO", "WARNING", "ERROR"}:
             raise ConfigError("Invalid LOG_LEVEL")
         economic_feeds = {}
@@ -283,9 +280,9 @@ class Config:
             int(number("HTTP_MAX_ATTEMPTS", 3, 1, 5)),
             number("MAX_NOTIFICATION_AGE_HOURS", 24, 1, 168),
             level,
-            os.getenv("AZURE_TRANSLATOR_KEY", "").strip(),
-            os.getenv("AZURE_TRANSLATOR_REGION", "global").strip(),
-            translator_endpoint,
+            ollama_url,
+            os.getenv('OLLAMA_MODEL', 'qwen3.5:9b').strip(),
+            number('OLLAMA_TIMEOUT_SECONDS', 600, 30, 1800),
             economic_enabled=boolean("ECONOMIC_ENABLED", True),
             economic_interval=number("ECONOMIC_INTERVAL_SECONDS", 120, 60, 86400),
             economic_initial_lookback=number("ECONOMIC_INITIAL_LOOKBACK_HOURS", 24, 0, 48),

@@ -54,7 +54,7 @@ def test_missing_optional_keys_disables_sources():
     [
         ("TELEGRAM_BOT_TOKEN", "bad-format"),
         ("SEC_USER_AGENT", "no-contact"),
-        ("AI_SUMMARY_ENABLED", "true"),
+        ("OLLAMA_BASE_URL", "https://remote.example.com"),
         ("FED_INTERVAL_SECONDS", "0"),
         ("FED_INTERVAL_SECONDS", "nan"),
         ("FED_ENABLED", "typo"),

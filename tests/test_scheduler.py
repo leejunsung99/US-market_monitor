@@ -1,4 +1,5 @@
 import json
+import threading
 from datetime import timedelta
 from types import SimpleNamespace
 
@@ -6,6 +7,35 @@ from us_market_monitor.database.models import utcnow
 from us_market_monitor.http import FetchError
 from us_market_monitor.notifications.telegram import DeliveryError
 from us_market_monitor.scheduler.jobs import Radar
+
+
+def test_local_model_work_does_not_block_scheduler(repo, classifier, filters, event_factory, monkeypatch):
+    started, release = threading.Event(), threading.Event()
+    sent = []
+    repo.ingest(classifier.classify(event_factory()), filters)
+    monkeypatch.setattr('us_market_monitor.scheduler.jobs.enrich_article', lambda event, **kw: event)
+
+    def translate(event):
+        started.set()
+        release.wait(3)
+        return True
+
+    radar = Radar([], repo, classifier, translator=SimpleNamespace(background=True, translate=translate),
+                  telegram=SimpleNamespace(send_article=lambda event: sent.append(event) or 42))
+    try:
+        radar.dispatch()
+        assert started.wait(1)
+        assert repo.db.execute('SELECT status FROM notifications').fetchone()[0] == 'pending'
+        radar.dispatch()
+        assert sent == []
+        release.set()
+        radar.summary_work[1].result(timeout=2)
+        radar.dispatch()
+        assert len(sent) == 1
+        assert repo.db.execute('SELECT status FROM notifications').fetchone()[0] == 'sent'
+    finally:
+        release.set()
+        radar.summary_executor.shutdown(wait=True)
 
 
 def test_translation_failure_holds_delivery_for_retry(repo, classifier, filters, event_factory, monkeypatch):

@@ -63,6 +63,7 @@ def numbers(text):
     for word, value in {"first": "1", "second": "2", "third": "3", "fourth": "4"}.items():
         text = re.sub(r"\b" + word + r"(?=[ -]quarter\b)", value, text, flags=re.I)
     text = re.sub(r"\btwo-for-one\b", "2 for 1", text, flags=re.I)
+    text = re.sub(r'\bdouble[- ]digit\b', '2 digit', text, flags=re.I)
     months = "January February March April May June July August September October November December".split()
     for value, month in enumerate(months, 1):
         text = re.sub(r"\b" + month + r"\b", str(value), text, flags=re.I)
@@ -143,6 +144,7 @@ class OllamaPreview:
         self.model, self.base_url, self.timeout = model, base_url.rstrip("/"), timeout
         self.session = requests.Session()
         self.session.trust_env = False
+        self.system_prompt = SYSTEM
 
     def summarize(self, source, metadata):
         if not source.strip():
@@ -196,7 +198,7 @@ class OllamaPreview:
             self.base_url + "/api/chat",
             json={"model": self.model, "stream": False, "think": False, "format": SCHEMA,
                   "keep_alive": "15m", "options": {"temperature": 0, "num_ctx": 16384, "num_predict": 6000},
-                  "messages": [{"role": "system", "content": SYSTEM + focus},
+                  "messages": [{"role": "system", "content": self.system_prompt + focus},
                                {"role": "user", "content": json.dumps(
                                    {"metadata": metadata, "source_text": protected}, ensure_ascii=False)}]},
             timeout=(10, self.timeout),

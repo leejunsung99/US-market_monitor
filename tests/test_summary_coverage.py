@@ -1,12 +1,10 @@
 from html import unescape
-from types import SimpleNamespace
 
 import pytest
 
 from us_market_monitor.notifications.telegram import DeliveryError, Telegram, split_card
 from us_market_monitor.processors.briefing import prepare_brief, select_points
 from us_market_monitor.processors.ollama_preview import OllamaPreview, validate_result
-from us_market_monitor.processors.translator import Translator
 
 
 def test_material_facts_beyond_old_sentence_and_character_limits():
@@ -84,24 +82,6 @@ def test_llm_schema_accepts_more_than_three_evidenced_details():
     assert len(validate_result(result, evidence)['points']) == 12
 
 
-def test_large_translation_is_batched_without_dropping_points(monkeypatch, event_factory):
-    event = event_factory()
-    prepare_brief(event, ' '.join(f'Acme reported revenue of ${i} billion.' for i in range(1, 220)))
-    config = SimpleNamespace(translator_key='test', translator_region='global',
-                             translator_endpoint='https://example.com')
-    batches = []
-
-    def post(*args, **kwargs):
-        batch = kwargs['json']
-        batches.append(batch)
-        return SimpleNamespace(status_code=200, json=lambda: [
-            {'translations': [{'text': '번역 ' + item['Text']}]} for item in batch])
-
-    monkeypatch.setattr('requests.post', post)
-    assert Translator(config).translate(event)
-    assert len(batches) >= 3
-    assert sum(map(len, batches)) == 220  # title plus all 219 material facts
-    assert len(event.summary_ko.splitlines()) == 219
 
 
 def test_long_llm_source_processes_every_chunk_without_input_truncation(monkeypatch):

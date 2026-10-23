@@ -25,6 +25,16 @@ def test_accepts_source_backed_korean_summary():
     assert validate_result(valid_result(), SOURCE)["title_ko"] == "메타 실적 발표"
 
 
+def test_double_digit_wording_is_equivalent_to_two_digit_korean():
+    source = 'The company expects double-digit revenue growth.'
+    result = valid_result()
+    result['title_ko'] = '매출 성장 전망'
+    result['summary'] = {'text_ko': '2자리 매출 성장 예상', 'evidence': source}
+    result['points'] = [result['summary']]
+    result['limitations_ko'] = ''
+    validate_result(result, source)
+
+
 @pytest.mark.parametrize("text", ["매출이 99% 증가했습니다.", "순이익은 $9.9 billion, 전년 $8.1 billion입니다."])
 def test_rejects_invented_or_converted_numbers(text):
     result = valid_result()

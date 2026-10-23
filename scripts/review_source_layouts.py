@@ -8,8 +8,6 @@ from collections import Counter
 from dataclasses import asdict
 from pathlib import Path
 
-import requests
-
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
@@ -18,7 +16,6 @@ from us_market_monitor.database.repository import Repository  # noqa: E402
 from us_market_monitor.notifications.preview_layout import (  # noqa: E402
     build_card,
     render_card,
-    safe_translation,
 )
 from us_market_monitor.notifications.telegram import Telegram  # noqa: E402
 
@@ -38,27 +35,9 @@ def main():
     cache = json.loads(cache_path.read_text(encoding="utf-8")) if cache_path.exists() else {}
 
     def translate(text):
-        import re
-
-        if re.search(r"[가-힣]", text) or not config.translator_key:
-            return text
-        if text in cache:
-            return cache[text]
-        try:
-            response = requests.post(
-                config.translator_endpoint.rstrip("/") + "/translate",
-                params={"api-version": "3.0", "from": "en", "to": "ko"},
-                headers={"Ocp-Apim-Subscription-Key": config.translator_key,
-                         "Ocp-Apim-Subscription-Region": config.translator_region},
-                json=[{"Text": text}], timeout=25,
-            )
-            response.raise_for_status()
-            translated = response.json()[0]["translations"][0]["text"]
-        except (requests.RequestException, KeyError, IndexError, TypeError, ValueError):
-            return text
-        cache[text] = translated if safe_translation(text, translated) else text
-        cache_path.write_text(json.dumps(cache, ensure_ascii=False, indent=2), encoding="utf-8")
-        return cache[text]
+        # Historical layout audit is offline. New Korean summaries are generated
+        # through the production OllamaProcessor, never through a cloud service.
+        return cache.get(text, text)
 
     repo = Repository(config.data_dir / "radar.sqlite3", readonly=True)
     telegram = Telegram(config.telegram_token, target) if args.send_ids else None

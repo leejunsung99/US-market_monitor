@@ -25,10 +25,15 @@ def bullet_lines(items):
 
 
 def nominal(text):
+    text = re.sub(r'(\d)\s+(년|월|분기)', r'\1\2', text)
     for ending, replacement in [('발표했습니다', '발표'), ('증가했습니다', '증가'),
                                 ('감소했습니다', '감소'), ('기록했습니다', '기록'),
                                 ('예상됩니다', '예상'), ('예정입니다', '예정'),
                                 ('계획입니다', '계획'), ('전망입니다', '전망')]:
+        text = re.sub(re.escape(ending) + r'[.!。]?$', replacement, text.strip())
+    for ending, replacement in [('밝혔다', '밝혔음'), ('나타났다', '나타났음'),
+                                ('보였다', '보였음'), ('했다', '했음'),
+                                ('예상된다', '예상'), ('전망된다', '전망'), ('될 것이다', '예상')]:
         text = re.sub(re.escape(ending) + r'[.!。]?$', replacement, text.strip())
     return text
 
@@ -52,6 +57,9 @@ def notification_category(event):
 
 def format_compact_event(event, *, test=False):
     title, summary = RuleSummarizer().summarize(event)
+    record = event.metadata.get('ollama_summary')
+    if record:
+        title = record['result']['title_ko']
     family = notification_category(event)
     issuer = company_label(event, {})
     if issuer:
@@ -81,6 +89,14 @@ def format_compact_event(event, *, test=False):
         # Split separately labelled metrics only; never split a numeric comparison.
         for item in re.split(r'\s+·\s+(?=[^:·]{1,25}:)', text):
             groups.setdefault(category, []).append(nominal(item))
+    if record:
+        from us_market_monitor.processors.ollama import card_sections, fingerprint
+        from us_market_monitor.processors.ollama_preview import validate_result
+
+        validate_result(record['result'], record['source'])
+        if record['fingerprint'] != fingerprint(event, record['model']):
+            raise ValueError('stale_ollama_summary')
+        groups = card_sections(record)
     lines = [heading(('[테스트] ' if test else '') + '🇺🇸' + title + '🇺🇸')]
     for category, items in groups.items():
         lines += ['', heading('📍' + category), *bullet_lines(items)]

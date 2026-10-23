@@ -22,7 +22,7 @@ from us_market_monitor.database.repository import Repository
 from us_market_monitor.http import HttpClient, Stopped
 from us_market_monitor.notifications.telegram import DeliveryError, Telegram
 from us_market_monitor.processors.classifier import Classifier
-from us_market_monitor.processors.translator import Translator
+from us_market_monitor.processors.ollama import OllamaProcessor, ensure_gpu_server
 from us_market_monitor.scheduler.jobs import Radar
 
 log = logging.getLogger(__name__)
@@ -55,7 +55,6 @@ def setup_logging(config):
             config.telegram_chat_id,
             config.finnhub_key,
             config.sec_user_agent,
-            config.translator_key,
         ]
     )
     for handler in handlers:
@@ -273,12 +272,15 @@ def main(argv=None):
                 args.dry_run,
                 args.once,
             )
+            ensure_gpu_server(config)
+            log.info('Korean processing backend=ollama model=%s endpoint=%s',
+                     config.ollama_model, config.ollama_base_url)
             radar = Radar(
                 collectors,
                 repo,
                 Classifier(config.watchlist, config.filters),
                 telegram=telegram,
-                translator=Translator(config) if config.translator_key else None,
+                translator=OllamaProcessor(config),
                 monitor_releases=config.release_monitor_enabled and not args.economic_only,
                 dry_run=args.dry_run,
                 max_notification_age=config.max_notification_age,

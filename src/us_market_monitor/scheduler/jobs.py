@@ -35,6 +35,8 @@ class Radar:
         self.repo, self.classifier = repository, classifier
         self.telegram, self.dry_run = telegram, dry_run
         self.translator = translator
+        self.summary_work = None
+        self.summary_executor = None
         self.monitor_releases = monitor_releases
         self.max_notification_age = max_notification_age
         self.stop = stop or threading.Event()
@@ -103,21 +105,43 @@ class Radar:
             return
         # One delivery per scheduler tick avoids blocking collection processing behind bursts.
         rows = self.repo.pending(self.max_notification_age, limit=1)
+        background = getattr(self.translator, 'background', False)
+        completed = None
+        if background:
+            if self.summary_work is None:
+                if not rows:
+                    return
+                if self.summary_executor is None:
+                    self.summary_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix='ollama')
+                row = rows[0]
+                self.summary_work = (row, self.summary_executor.submit(self._prepare_event, self.repo.row_event(row)))
+                return
+            row, completed = self.summary_work
+            if not completed.done():
+                return
+            rows = [row]
+            self.summary_work = None
         for row in rows:
             if self.stop.is_set() or not self.repo.claim(row["id"]):
                 break
             try:
                 event = self.repo.row_event(row)
                 if hasattr(self.telegram, "send_article"):
-                    enrich_article(event, stop=self.stop)
-                    translated = False
-                    if self.translator:
-                        translated = self.translator.translate(event)
+                    if completed is not None:
+                        try:
+                            event, translated = completed.result()
+                        except Stopped:
+                            raise
+                        except Exception:
+                            raise DeliveryError('summary_worker_failed', retryable=True, retry_after=60) from None
+                    else:
+                        event, translated = self._prepare_event(event)
                     with self.repo.db:
                         self.repo.update_article(row["id"], event)
-                    if event.event_type not in {'economic_indicator', 'monitor_alert'} and not translated:
+                    if (event.event_type != 'monitor_alert' and not translated
+                            and (background or event.event_type != 'economic_indicator')):
                         raise DeliveryError('translation_pending', retryable=True, retry_after=60)
-                    if (event.event_type == 'economic_indicator'
+                    if (event.event_type == 'economic_indicator' and not translated
                             and '공식 발표 원문 발췌' in economic_digest(event)):
                         raise DeliveryError('economic_korean_review_pending', retryable=True, retry_after=300)
                     message_id = self.telegram.send_article(event)
@@ -139,6 +163,11 @@ class Radar:
                 self.repo.sent(row["id"], message_id)
                 self.notification_due = time.monotonic() + 3.1
                 log.info("Telegram sent event=%s message_id=%s", row["id"], message_id)
+
+    def _prepare_event(self, event):
+        enrich_article(event, stop=self.stop)
+        translated = self.translator.translate(event) if self.translator else False
+        return event, translated
 
     def run(self, once=False):
         attempted = set()
@@ -194,6 +223,8 @@ class Radar:
                         if self.stop.wait(max(0, self.notification_due - time.monotonic())):
                             break
                         self.dispatch()
+                        if self.summary_work:
+                            self.stop.wait(0.25)
                     break
                 if not self.collectors:
                     break
@@ -201,3 +232,5 @@ class Radar:
             for future, _ in self.futures.values():
                 future.cancel()
         self.repo.prune_seen()
+        if self.summary_executor:
+            self.summary_executor.shutdown(wait=True, cancel_futures=True)

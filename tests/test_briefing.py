@@ -1,19 +1,15 @@
 from types import SimpleNamespace
 
-import requests
-
 from us_market_monitor.collectors.sec import filing_text
 from us_market_monitor.notifications.article import enrich_article
 from us_market_monitor.notifications.formatter import format_event
 from us_market_monitor.processors.briefing import (
-    VERSION,
     display_summary,
     financial_fact_korean,
     polish_korean,
     prepare_brief,
     select_points,
 )
-from us_market_monitor.processors.translator import Translator
 
 
 def test_complete_sentences_ranges_and_no_clipped_teaser():
@@ -101,43 +97,6 @@ def test_article_body_overrides_clipped_api_description(event_factory):
     assert format_event(event).count("• ") == 2
 
 
-def test_translates_individual_points_and_preserves_whole_range(monkeypatch, event_factory):
-    event = event_factory(
-        "Acme launches a simulator",
-        summary=(
-            "Acme launches a simulator for chip factories. "
-            "It achieves 2-3x acceleration in early-access testing."
-        ),
-    )
-    client = Translator(
-        SimpleNamespace(
-            translator_key="test",
-            translator_region="global",
-            translator_endpoint="https://example.com",
-        )
-    )
-    calls = []
-
-    def post(*_, **kwargs):
-        calls.append(kwargs["json"])
-        return SimpleNamespace(
-            status_code=200,
-            json=lambda: [
-                {"translations": [{"text": t}]}
-                for t in [
-                    "Acme 시뮬레이터 출시",
-                    "Acme가 반도체 공장용 시뮬레이터를 출시했습니다.",
-                    "초기 접근 테스트에서 2-3x 가속을 달성했습니다.",
-                ]
-            ],
-        )
-
-    monkeypatch.setattr(requests, "post", post)
-    assert client.translate(event)
-    assert len(calls[0]) == 3
-    assert '<span class="notranslate">2-3x</span>' in calls[0][2]["Text"]
-    assert "\n• 성능·수치: 초기 테스트에서 2–3배" in display_summary(event)
-    assert event.translation_hash.startswith(VERSION + ":")
 
 
 def test_filing_metadata_and_selected_facts_survive_queue(repo, classifier, filters, event_factory):

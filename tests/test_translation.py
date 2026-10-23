@@ -1,169 +1,99 @@
+"""Production local translator, evidence, cache and output integration."""
+
 from types import SimpleNamespace
 
-import requests
-
-from us_market_monitor.notifications.formatter import format_rich_article
-from us_market_monitor.processors.translator import Translator
+from us_market_monitor.notifications.compact import format_compact_event
+from us_market_monitor.processors.ollama import OllamaProcessor, card_sections, source_text
 
 
-def translator():
-    return Translator(
-        SimpleNamespace(
-            translator_key="private-test-key",
-            translator_region="global",
-            translator_endpoint="https://api.cognitive.microsofttranslator.com/",
-        )
-    )
+def processor(monkeypatch, result=None):
+    class Client:
+        def __init__(self, model, url, timeout):
+            self.model, self.system_prompt = model, ''
+
+        def summarize(self, source, metadata):
+            if isinstance(result, Exception):
+                raise result
+            return result or {
+                'title_ko': '메타 실적 발표',
+                'summary': {'text_ko': '매출 성장 확인했음', 'evidence': 'Meta reported revenue growth.'},
+                'points': [{'text_ko': '매출 성장 보고했음', 'evidence': 'Meta reported revenue growth.'}],
+                'limitations_ko': '',
+            }, {'wall_seconds': 1}
+
+    monkeypatch.setattr('us_market_monitor.processors.ollama.OllamaPreview', Client)
+    return OllamaProcessor(SimpleNamespace(ollama_model='local', ollama_base_url='http://localhost:11435',
+                                           ollama_timeout=600))
 
 
-def response(texts):
-    return SimpleNamespace(
-        status_code=200,
-        json=lambda: [{"translations": [{"text": text, "to": "ko"}]} for text in texts],
-    )
+def test_production_generates_formats_and_reuses_local_cache(monkeypatch, event_factory):
+    event = event_factory('Meta reports results', summary='Meta reported revenue growth.')
+    event.related_tickers = ('META',)
+    client = processor(monkeypatch)
+    assert client.translate(event)
+    assert event.translation_hash.startswith('ollama:')
+    assert '매출 성장 확인했음' in format_compact_event(event)
+    monkeypatch.setattr(client.client, 'summarize', lambda *args: (_ for _ in ()).throw(AssertionError('cached')))
+    assert client.translate(event)
 
 
-def test_translate_cache_and_preserve_source(monkeypatch, event_factory):
-    event = event_factory(
-        "Micron reports revenue of $10 billion",
-        summary="MU reports revenue of $10 billion.",
-        related_tickers=("MU",),
-    )
+def test_failed_generation_is_held_without_old_cloud_translation(monkeypatch, event_factory):
+    event = event_factory()
+    assert not processor(monkeypatch, ValueError('invalid_output')).translate(event)
+    assert 'ollama_summary' not in event.metadata
+
+
+def test_article_style_is_rejected(monkeypatch, event_factory):
+    result = {'title_ko': '기사', 'summary': {'text_ko': '증가했습니다.', 'evidence': 'Source fact.'},
+              'points': [{'text_ko': '상승했음', 'evidence': 'Source fact.'}], 'limitations_ko': ''}
+    assert not processor(monkeypatch, result).translate(event_factory())
+
+
+def test_source_uses_full_body_and_complete_short_headline(event_factory):
+    event = event_factory('Tesla CFO revises capex', summary='Clipped...')
+    assert source_text(event) == event.title
+    event.body = 'Tesla reported profit growth. Tesla expects higher demand.'
+    assert 'higher demand' in source_text(event)
+
+
+def test_ollama_evidence_survives_database_roundtrip(monkeypatch, repo, classifier, filters, event_factory):
+    event = classifier.classify(event_factory())
+    event.body = 'Meta reported revenue growth.'
+    assert processor(monkeypatch).translate(event)
+    event_id = repo.ingest(event, filters)
+    loaded = repo.row_event(repo.db.execute('SELECT * FROM events WHERE id=?', (event_id,)).fetchone())
+    assert loaded.metadata['ollama_summary'] == event.metadata['ollama_summary']
+
+
+def test_invalid_claim_is_regenerated_from_its_evidence_only(monkeypatch, event_factory):
+    event = event_factory('Meta results', summary='Meta reported revenue growth. Guidance remains unchanged.')
+    client = processor(monkeypatch)
+    bad = {'title_ko': '실적',
+           'summary': {'text_ko': '매출 성장', 'evidence': 'Meta reported revenue growth.'},
+           'points': [{'text_ko': '2027년 가이던스 유지', 'evidence': 'Guidance remains unchanged.'}],
+           'limitations_ko': ''}
     calls = []
 
-    def post(url, **kwargs):
-        calls.append(kwargs)
-        return response(["마이크론 매출 $10 billion 발표", "MU 매출 $10 billion 발표"])
+    def summarize(source, metadata):
+        calls.append(source)
+        if len(calls) == 1:
+            error = ValueError('unsupported_claim_numbers')
+            error.result, error.stats = bad, {'wall_seconds': 1}
+            raise error
+        assert source == 'Guidance remains unchanged.'
+        fixed = {'text_ko': '가이던스 유지', 'evidence': source}
+        return {'title_ko': '전망', 'summary': fixed, 'points': [fixed], 'limitations_ko': ''}, {'wall_seconds': 1}
 
-    monkeypatch.setattr(requests, "post", post)
-    client = translator()
+    monkeypatch.setattr(client.client, 'summarize', summarize)
     assert client.translate(event)
-    assert client.translate(event)
-    assert len(calls) == 1
-    assert calls[0]["params"]["textType"] == "html"
-    assert "Ocp-Apim-Subscription-Region" not in calls[0]["headers"]
-    assert "notranslate" in calls[0]["json"][0]["Text"]
-    assert event.title == "Micron reports revenue of $10 billion"
-    assert format_rich_article(event)["blocks"][0]["text"] == event.title_ko
+    assert event.metadata['ollama_summary']['result']['points'][0]['text_ko'] == '가이던스 유지'
+    assert len(calls) == 2
 
 
-def test_changed_amount_falls_back_without_key_in_logs(monkeypatch, event_factory, caplog):
-    event = event_factory("Micron revenue $10 billion", summary="Revenue $10 billion.")
-    monkeypatch.setattr(
-        requests, "post", lambda *a, **kw: response(["매출 $11 billion", "매출 $10 billion"])
-    )
-    assert not translator().translate(event)
-    assert not event.title_ko
-    assert "private-test-key" not in caplog.text
-    assert format_rich_article(event)["blocks"][0]["text"] == event.title
-
-
-def test_translation_failure_does_not_block_news(monkeypatch, event_factory):
-    def fail(*args, **kwargs):
-        raise requests.ReadTimeout("private-test-key")
-
-    monkeypatch.setattr(requests, "post", fail)
-    event = event_factory()
-    assert not translator().translate(event)
-    assert not event.translation_hash
-
-
-def test_filing_repeated_numbers_and_overlapping_tokens(monkeypatch, event_factory):
-    from bs4 import BeautifulSoup
-
-    event = event_factory(
-        "TSM 6-K 공시",
-        summary="EX-99.1 2 EX-99.1 Document reports EPS of NT$29.43 in 2026, compared with 2026.",
-        related_tickers=("TSM",),
-    )
-
-    def post(*args, **kwargs):
-        payload = kwargs["json"]
-        tokens = [
-            span.get_text()
-            for item in payload
-            for span in BeautifulSoup(item["Text"], "html.parser").select("span")
-        ]
-        assert "99.1 D" not in tokens
-        return response(['번역 ' + item["Text"] for item in payload])
-
-    monkeypatch.setattr(requests, "post", post)
-    assert translator().translate(event)
-
-
-def test_repeated_filing_number_cannot_disappear(monkeypatch, event_factory):
-    event = event_factory("TSM 6-K 공시", summary="Exhibit 99.1 references Exhibit 99.1.")
-    monkeypatch.setattr(
-        requests,
-        "post",
-        lambda *a, **kw: response(["TSM 6-K 공시", "첨부 99.1을 참조합니다."]),
-    )
-    assert not translator().translate(event)
-
-
-def test_translation_saved_and_reused(repo, classifier, filters, event_factory, monkeypatch):
-    event = classifier.classify(event_factory())
-    monkeypatch.setattr(
-        requests, "post", lambda *a, **kw: response(["엔비디아 실적 발표", "매출 $10 billion"])
-    )
-    client = translator()
-    assert client.translate(event)
-    event_id = repo.ingest(event, filters)
-    restored = repo.row_event(
-        repo.db.execute("SELECT * FROM events WHERE id=?", (event_id,)).fetchone()
-    )
-    monkeypatch.setattr(
-        requests,
-        "post",
-        lambda *a, **kw: (_ for _ in ()).throw(AssertionError("cache must avoid API")),
-    )
-    assert client.translate(restored)
-    assert restored.summary_ko == event.summary_ko
-
-
-def test_month_conversion_cannot_create_false_repeated_number(monkeypatch, event_factory):
-    event = event_factory('Qualcomm earnings schedule',
-                          summary='Qualcomm announced its schedule on 10/22/2026 in Oct.')
-
-    def post(*args, **kwargs):
-        from bs4 import BeautifulSoup
-
-        tokens = [span.get_text() for span in
-                  BeautifulSoup(kwargs['json'][1]['Text'], 'html.parser').select('span')]
-        assert 'Oct.' in tokens
-        return response(['퀄컴 실적 일정', '퀄컴 일정 발표 10/22/2026 Oct.'])
-
-    monkeypatch.setattr(requests, 'post', post)
-    assert translator().translate(event)
-    assert '10월' in event.summary_ko
-
-
-def test_clock_time_is_protected_as_one_value(monkeypatch, event_factory):
-    event = event_factory('Qualcomm conference call',
-                          summary='Qualcomm announced a call at 1:45 p.m. Pacific Time.')
-
-    def post(*args, **kwargs):
-        from bs4 import BeautifulSoup
-
-        tokens = [span.get_text() for span in
-                  BeautifulSoup(kwargs['json'][1]['Text'], 'html.parser').select('span')]
-        assert '1:45 p.m.' in tokens
-        return response(['퀄컴 컨퍼런스콜', '퀄컴 1:45 p.m. 태평양 시간 콜 발표'])
-
-    monkeypatch.setattr(requests, 'post', post)
-    assert translator().translate(event)
-
-
-def test_short_wire_without_article_is_translated(monkeypatch, event_factory):
-    event = event_factory('Tesla CFO Revises CAPEX Guidance To $20B', summary='')
-    monkeypatch.setattr(requests, 'post', lambda *args, **kwargs:
-                        response(['테슬라 CFO 설비투자 전망 $20B', '테슬라 CFO 설비투자 전망 $20B']))
-    assert translator().translate(event)
-    assert event.summary_ko
-
-
-def test_provider_returning_unchanged_english_is_not_a_success(monkeypatch, event_factory):
-    event = event_factory('Qualcomm earnings schedule', summary='Qualcomm announced a call.')
-    monkeypatch.setattr(requests, 'post', lambda *args, **kwargs:
-                        response(['Qualcomm earnings schedule', 'Qualcomm announced a call.']))
-    assert not translator().translate(event)
+def test_gross_margin_label_is_preserved_in_final_korean_card():
+    claim = {'text_ko': '에너지 부문 순이익률이 20.4%에서 33.1%로 개선됐다고 밝혔다.',
+             'evidence': 'Energy Gross Margins Improved From 20.4% To 33.1%'}
+    sections = card_sections({'source': claim['evidence'], 'result': {'summary': claim, 'points': []}})
+    text = sections['핵심내용'][0]
+    assert '매출총이익률' in text and '순이익률' not in text
+    assert text.endswith('밝혔음')

@@ -386,6 +386,7 @@ class Repository:
                             "publication_precision",
                             "publication_date",
                             "original_download_url",
+                            'ollama_summary',
                         )
                         if k in event.metadata
                     }

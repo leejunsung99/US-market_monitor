@@ -151,11 +151,12 @@ def edit(config):
                                    + ': ' + str(result.get('error_code')))
             else:
                 raise RuntimeError('Edit not confirmed')
-            record = dict(item['event'])
-            record['published_at'] = datetime.fromisoformat(record['published_at'])
-            record['detected_at'] = datetime.fromisoformat(record['detected_at'])
-            with repo.db:
-                repo.update_article(item['event_id'], Event(**record))
+            if 'event' in item:
+                record = dict(item['event'])
+                record['published_at'] = datetime.fromisoformat(record['published_at'])
+                record['detected_at'] = datetime.fromisoformat(record['detected_at'])
+                with repo.db:
+                    repo.update_article(item['event_id'], Event(**record))
             receipt = {'event_id': item['event_id'], 'message_id': item['message_id'], 'mode': mode,
                        'target': 'main', 'edited_at': datetime.now(UTC).isoformat()}
             with RECEIPTS.open('a', encoding='utf-8') as log:
