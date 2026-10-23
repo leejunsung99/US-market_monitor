@@ -1,6 +1,10 @@
 import pytest
 
-from us_market_monitor.notifications.compact import format_compact_event, notification_category
+from us_market_monitor.notifications.compact import (
+    bullet_lines,
+    format_compact_event,
+    notification_category,
+)
 from us_market_monitor.notifications.telegram import DeliveryError, Telegram
 
 
@@ -27,6 +31,9 @@ def test_earnings_call_title_and_escaped_content(event_factory, monkeypatch):
     ('Official/meta', 'earnings', 'Meta earnings call transcript', [], '어닝콜 요약'),
     ('SEC EDGAR', 'contract_investment', 'LRCX 8-K', ['1.01'], '계약·투자'),
     ('Finnhub/News', 'earnings_guidance', 'Lam outlook', [], '실적 전망 관련 보도'),
+    ('Official/qualcomm', 'earnings',
+     'Qualcomm Schedules Fourth Quarter and Fiscal 2026 Earnings Release and Conference Call',
+     [], '실적발표 일정'),
 ])
 def test_category_uses_source_and_disclosure_metadata(
     event_factory, source, event_type, title, items, expected,
@@ -57,3 +64,12 @@ def test_photo_partial_delivery_never_retries_whole_article(event_factory, monke
         client.send_article(event)
     assert error.value.ambiguous and not error.value.retryable
     assert calls == ['sendPhoto', 'sendMessage']
+
+
+def test_short_metrics_stay_together_long_paragraphs_have_blank_lines():
+    short = ['시간외 주가: -6.4%', '실적 발표 후 주가 하락 보도']
+    assert bullet_lines(short) == ['· ' + item for item in short]
+    long = '업계 기업들의 성장에도 불구하고 주가 수준에 대한 우려와 자금 조달 비용 상승 부담이 남아 있다는 설명'
+    assert bullet_lines([*short, long, long]) == [
+        '· ' + short[0], '· ' + short[1], '', '· ' + long, '', '· ' + long,
+    ]

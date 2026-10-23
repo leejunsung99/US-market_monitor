@@ -11,6 +11,7 @@ from us_market_monitor.http import FetchError, Stopped
 from us_market_monitor.notifications.article import enrich_article
 from us_market_monitor.notifications.formatter import format_event
 from us_market_monitor.notifications.telegram import DeliveryError
+from us_market_monitor.processors.briefing import economic_digest
 from us_market_monitor.processors.normalizer import parse_time
 
 log = logging.getLogger(__name__)
@@ -109,10 +110,16 @@ class Radar:
                 event = self.repo.row_event(row)
                 if hasattr(self.telegram, "send_article"):
                     enrich_article(event, stop=self.stop)
+                    translated = False
                     if self.translator:
-                        self.translator.translate(event)
+                        translated = self.translator.translate(event)
                     with self.repo.db:
                         self.repo.update_article(row["id"], event)
+                    if event.event_type not in {'economic_indicator', 'monitor_alert'} and not translated:
+                        raise DeliveryError('translation_pending', retryable=True, retry_after=60)
+                    if (event.event_type == 'economic_indicator'
+                            and '공식 발표 원문 발췌' in economic_digest(event)):
+                        raise DeliveryError('economic_korean_review_pending', retryable=True, retry_after=300)
                     message_id = self.telegram.send_article(event)
                 else:
                     message_id = self.telegram.send(format_event(event))

@@ -12,13 +12,17 @@ from us_market_monitor.processors.normalizer import canonical_url, plain_text
 
 def article_text(page):
     """Read article containers only; never summarize navigation or page chrome."""
-    article = page.select_one('[itemprop="articleBody"], .caas-body, article, #article')
+    article = (page.select_one('.xn-content, .caas-body, [itemprop="articleBody"]')
+               or page.select_one('article, #article'))
     if article:
         for node in article.select("script, style, nav, aside, footer, form"):
             node.decompose()
         paragraphs = []
         for node in article.select('p, li, h2, h3'):
             text = plain_text(str(node))
+            if (re.fullmatch(r'About [A-Z][A-Za-z &.-]{1,70}', text)
+                    or re.match(r'^About [A-Z][A-Za-z &.-]{1,70} (?:is|provides|develops|was founded)\b', text)):
+                break
             if node.name in {'h2', 'h3'}:
                 if re.match(r'About\s|Should You Invest|Featured Articles|Related (?:Stories|Articles|Videos)',
                             text, re.I):

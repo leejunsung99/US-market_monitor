@@ -85,7 +85,7 @@ def test_filing_repeated_numbers_and_overlapping_tokens(monkeypatch, event_facto
             for span in BeautifulSoup(item["Text"], "html.parser").select("span")
         ]
         assert "99.1 D" not in tokens
-        return response([item["Text"] for item in payload])
+        return response(['번역 ' + item["Text"] for item in payload])
 
     monkeypatch.setattr(requests, "post", post)
     assert translator().translate(event)
@@ -119,3 +119,51 @@ def test_translation_saved_and_reused(repo, classifier, filters, event_factory, 
     )
     assert client.translate(restored)
     assert restored.summary_ko == event.summary_ko
+
+
+def test_month_conversion_cannot_create_false_repeated_number(monkeypatch, event_factory):
+    event = event_factory('Qualcomm earnings schedule',
+                          summary='Qualcomm announced its schedule on 10/22/2026 in Oct.')
+
+    def post(*args, **kwargs):
+        from bs4 import BeautifulSoup
+
+        tokens = [span.get_text() for span in
+                  BeautifulSoup(kwargs['json'][1]['Text'], 'html.parser').select('span')]
+        assert 'Oct.' in tokens
+        return response(['퀄컴 실적 일정', '퀄컴 일정 발표 10/22/2026 Oct.'])
+
+    monkeypatch.setattr(requests, 'post', post)
+    assert translator().translate(event)
+    assert '10월' in event.summary_ko
+
+
+def test_clock_time_is_protected_as_one_value(monkeypatch, event_factory):
+    event = event_factory('Qualcomm conference call',
+                          summary='Qualcomm announced a call at 1:45 p.m. Pacific Time.')
+
+    def post(*args, **kwargs):
+        from bs4 import BeautifulSoup
+
+        tokens = [span.get_text() for span in
+                  BeautifulSoup(kwargs['json'][1]['Text'], 'html.parser').select('span')]
+        assert '1:45 p.m.' in tokens
+        return response(['퀄컴 컨퍼런스콜', '퀄컴 1:45 p.m. 태평양 시간 콜 발표'])
+
+    monkeypatch.setattr(requests, 'post', post)
+    assert translator().translate(event)
+
+
+def test_short_wire_without_article_is_translated(monkeypatch, event_factory):
+    event = event_factory('Tesla CFO Revises CAPEX Guidance To $20B', summary='')
+    monkeypatch.setattr(requests, 'post', lambda *args, **kwargs:
+                        response(['테슬라 CFO 설비투자 전망 $20B', '테슬라 CFO 설비투자 전망 $20B']))
+    assert translator().translate(event)
+    assert event.summary_ko
+
+
+def test_provider_returning_unchanged_english_is_not_a_success(monkeypatch, event_factory):
+    event = event_factory('Qualcomm earnings schedule', summary='Qualcomm announced a call.')
+    monkeypatch.setattr(requests, 'post', lambda *args, **kwargs:
+                        response(['Qualcomm earnings schedule', 'Qualcomm announced a call.']))
+    assert not translator().translate(event)

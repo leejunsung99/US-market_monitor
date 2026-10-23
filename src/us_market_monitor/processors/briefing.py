@@ -6,7 +6,7 @@ from difflib import SequenceMatcher
 
 from us_market_monitor.processors.normalizer import digest, plain_text
 
-VERSION = "source-brief-v3-material"
+VERSION = "source-brief-v4-clean"
 
 NOISE = re.compile(
     r"share on|subscribe|read more|click here|all rights reserved|privacy policy|"
@@ -24,6 +24,8 @@ PROMOTION = re.compile(
     r'get every upgrade|this instant news alert was generated|'
     r'view the five stocks|this report names|free report|'
     r'preferred source on google|sign up for|'
+    r'may earn commission or revenue|contributed to this report|'
+    r'has written well over|editor:|'
     r'^(?:about .{0,70} )?.{0,70} is a technology company that develops', re.I,
 )
 ACTION = re.compile(
@@ -68,6 +70,11 @@ def sentences(text, title=""):
     """Keep decimal points and ranges intact, omit clipped trailing fragments."""
     for paragraph in re.split(r"\n+|\s*•\s*", text or ""):
         paragraph = plain_text(paragraph)
+        if re.search(r'By spreading exposure across multiple asset classes|'
+                     r'^For accredited investors|^About (?:Stagwell|Palantir|Qualcomm)\b|'
+                     r'^These statements may relate to|^These risks and uncertainties include',
+                     paragraph, re.I):
+            break
         paragraph = re.sub(
             r"^(?:News Summary|Highlights|뉴스 요약|주요 내용)\s*:\s*", "", paragraph, flags=re.I
         )
@@ -75,7 +82,13 @@ def sentences(text, title=""):
             paragraph = paragraph[len(title) :].lstrip(" .:—–-")
         # Press-release feeds sometimes join sentences without a space.
         paragraph = re.sub(r"(?<=[a-z0-9])\.(?=[A-Z][a-z])", ". ", paragraph)
+        # Date abbreviations and a.m./p.m. are not sentence endings. Preserve
+        # the exact original spelling after splitting so evidence stays intact.
+        abbreviation = re.compile(r'\b(?:Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)\.'
+                                  r'|\b[ap]\.m\.', re.I)
+        paragraph = abbreviation.sub(lambda m: m[0].replace('.', '\ue000'), paragraph)
         for sentence in re.split(r"(?<=[.!?。])\s+(?=[A-Z0-9\"“가-힣])", paragraph):
+            sentence = sentence.replace('\ue000', '.')
             sentence = sentence.strip().lstrip("• ")
             if not sentence or NOISE.search(sentence) or PROMOTION.search(sentence):
                 continue
@@ -154,7 +167,13 @@ def prepare_brief(event, text=None):
 def brief_points(event):
     # New summaries are newline-separated complete source sentences. Older records
     # also pass through the cleaner so cover pages and clipped teasers stay out.
-    return select_points(event.article_summary or event.summary, event.title)
+    points = select_points(event.article_summary or event.summary, event.title)
+    if (not points and event.source.startswith('Finnhub/')
+            and event.title and not event.title.rstrip().endswith(('...', '…'))):
+        # Short wire headlines are complete editorial items even without a full
+        # stop. Never turn a clipped article teaser into a fabricated sentence.
+        return [event.title]
+    return points
 
 
 def translation_fingerprint(event):
@@ -177,7 +196,8 @@ def polish_korean(text, source):
 
     def dollars(match):
         amount = Decimal(match[1].replace(",", ""))
-        amount *= {"trillion": 10**12, "billion": 10**9, "million": 10**6, "bn": 10**9}.get(
+        amount *= {"trillion": 10**12, "billion": 10**9, "million": 10**6, "bn": 10**9,
+                   'b': 10**9, 'm': 10**6, 't': 10**12, 'k': 1000}.get(
             (match[2] or "").lower(), 1
         )
         for scale, unit in ((10**12, "조"), (10**8, "억"), (10**4, "만"), (1, "")):
@@ -188,7 +208,7 @@ def polish_korean(text, source):
                 return value + unit + " 달러"
 
     text = re.sub(
-        r"(?<![A-Za-z])\$\s*(\d[\d,]*(?:\.\d+)?)(?:\s*(trillion|billion|million|bn))?",
+        r"(?<![A-Za-z])\$\s*(\d[\d,]*(?:\.\d+)?)(?:\s*(trillion|billion|million|bn|[BMTK])\b)?",
         dollars,
         text,
         flags=re.I,
@@ -234,6 +254,12 @@ def economic_digest(event):
     """Avoid translating statistical terms (SA/NSA) or changing metric roles."""
     indicator = event.metadata.get("indicator")
     text = event.summary
+    if indicator == 'claims':
+        from us_market_monitor.notifications.preview_layout import economic_points
+
+        points = economic_points(event)
+        if points and all(re.search(r'[가-힣]', point) for point in points):
+            return '\n'.join('• ' + point for point in points)
     movement = r"\b(rose|increased|fell|declined|decreased|up|down|advanced)\s+(?:by\s+)?(\d+(?:\.\d+)?)\s+percent\b"
 
     def rate(match):

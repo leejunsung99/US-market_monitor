@@ -2,9 +2,19 @@ from types import SimpleNamespace
 
 import requests
 
-from us_market_monitor.notifications.article import enrich_article, image_url
+from us_market_monitor.notifications.article import article_text, enrich_article, image_url
 from us_market_monitor.notifications.formatter import format_rich_article
 from us_market_monitor.notifications.telegram import Telegram
+
+
+def test_prnewswire_body_excludes_site_controls_and_company_bio():
+    from bs4 import BeautifulSoup
+
+    page = BeautifulSoup('<main>View all news Download<div class="xn-content">'
+                         '<p>Qualcomm announced a call on November 4, 2026.</p>'
+                         '<p><b>About Qualcomm</b></p><p>Qualcomm is an AI leader.</p>'
+                         '</div></main>', 'html.parser')
+    assert article_text(page) == 'Qualcomm announced a call on November 4, 2026.'
 
 
 def test_rich_article_order_and_source_only(event_factory, monkeypatch):

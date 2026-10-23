@@ -1,6 +1,7 @@
 """Approved channel layout, using the existing evidence and translation pipeline."""
 
 import re
+import unicodedata
 from html import escape
 
 from us_market_monitor.notifications.preview_layout import company_label, source_family
@@ -9,6 +10,18 @@ from us_market_monitor.processors.summarizer import RuleSummarizer
 
 def heading(text):
     return '<b><u>' + escape(text) + '</u></b>'
+
+
+def bullet_lines(items):
+    """Separate paragraphs that are likely to wrap on a mobile screen."""
+    lines, previous_long = [], False
+    for item in items:
+        wide = sum(2 if unicodedata.east_asian_width(c) in {'W', 'F'} else 1 for c in item) > 90
+        if lines and (previous_long or wide):
+            lines.append('')
+        lines.append('· ' + escape(item))
+        previous_long = wide
+    return lines
 
 
 def nominal(text):
@@ -22,6 +35,10 @@ def nominal(text):
 
 def notification_category(event):
     """Separate primary releases from reporting, independently of importance."""
+    if re.search(r'\b(?:schedules?|sets? date|to (?:announce|report|release))\b.{0,160}'
+                 r'\b(?:earnings|financial results)\b|실적.{0,20}(?:발표 일정|발표 예정)',
+                 event.title, re.I):
+        return '실적발표 일정'
     family = source_family(event)
     official = event.source == 'SEC EDGAR' or event.source.startswith('Official/')
     if re.search(r'earnings call|어닝콜', event.title, re.I):
@@ -59,12 +76,14 @@ def format_compact_event(event, *, test=False):
             category, text = '주요 실적', line
         else:
             category, text = '핵심내용', line
+        if family == '실적발표 일정':
+            category = '발표 일정'
         # Split separately labelled metrics only; never split a numeric comparison.
         for item in re.split(r'\s+·\s+(?=[^:·]{1,25}:)', text):
             groups.setdefault(category, []).append(nominal(item))
     lines = [heading(('[테스트] ' if test else '') + '🇺🇸' + title + '🇺🇸')]
     for category, items in groups.items():
-        lines += ['', heading('📍' + category), *['· ' + escape(item) for item in items]]
+        lines += ['', heading('📍' + category), *bullet_lines(items)]
     lines += ['', heading('📍원문 링크') + ' : ' + escape(event.source_url), '',
               heading('🇺🇸그로쓰리서치 U.S 채널[실시간 U.S 주요 알림]'),
               'https://t.me/growth_us']

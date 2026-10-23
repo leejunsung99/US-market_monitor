@@ -141,7 +141,7 @@ def economic_points(event):
     if indicator == "claims":
         points = []
         patterns = [
-            (r"seasonally adjusted initial claims was ([\d,]+), an (increase|decrease) of ([\d,]+)",
+            (r"seasonally adjusted initial claims was ([\d,]+), a(?:n)? (increase|decrease) of ([\d,]+)",
              "신규 실업수당 청구"),
             (r"seasonally adjusted insured unemployment during the week ending (\w+ \d+) was ([\d,]+), a(?:n)? (decrease|increase) of ([\d,]+)",
              "계속 실업수당 수급"),
@@ -151,9 +151,13 @@ def economic_points(event):
             if match:
                 parts = match.groups()
                 value, direction, delta = parts[-3:]
-                date = f" · {parts[0]} 종료 주" if len(parts) == 4 else ""
+                date = ''
+                if len(parts) == 4:
+                    month, day = parts[0].split()
+                    months = 'January February March April May June July August September October November December'.split()
+                    date = f' · {months.index(month) + 1}월 {day}일 종료 주'
                 points.append(f"{label}: {value}명 (전주 수정치 대비 {'+' if direction == 'increase' else '-'}{delta}명{date})")
-        match = re.search(r"4-week moving average was ([\d,]+), an (increase|decrease) of ([\d,]+)", text)
+        match = re.search(r"4\s*-week moving average was ([\d,]+), a(?:n)? (increase|decrease) of ([\d,]+)", text)
         if match:
             points.append(f"신규 청구 4주 이동평균: {match[1]}명 (전주 수정치 대비 {'+' if match[2] == 'increase' else '-'}{match[3]}명)")
         if points:

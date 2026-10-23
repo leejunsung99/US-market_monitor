@@ -29,6 +29,19 @@ def test_complete_sentences_ranges_and_no_clipped_teaser():
     assert "News Summary" not in " ".join(points)
 
 
+def test_dates_and_clock_abbreviations_do_not_split_release_sentences():
+    text = ('Qualcomm announced on Oct. 22, 2026 that results will be published. '
+            'The call will begin at 1:45 p.m. Pacific Time on November 4, 2026.')
+    points = select_points(text)
+    assert len(points) == 2
+    assert 'Oct. 22, 2026' in points[0]
+    assert '1:45 p.m. Pacific Time' in points[1]
+
+
+def test_short_scale_money_is_not_rendered_as_twenty_dollars_b():
+    assert polish_korean('$20B', '') == '200억 달러'
+
+
 def test_similar_metrics_with_different_values_are_preserved():
     points = select_points("Revenue was $10.3 billion in Q1. Revenue was $11.3 billion in Q2.")
     assert len(points) == 2

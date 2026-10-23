@@ -30,6 +30,15 @@ def test_count_removal_does_not_admit_paid_promotion():
     assert 'capital expenditures' in points[-1]
 
 
+def test_reporter_credit_and_sponsored_tail_are_not_material_news():
+    text = ('Netflix reported double-digit revenue growth.\n'
+            'AP Business Writer Elaine Kurtenbach contributed to this report.\n'
+            'By spreading exposure across multiple asset classes, investors can manage risk.\n'
+            'FarmTogether offers investments starting at $15,000.')
+    points = select_points(text)
+    assert points == ['Netflix reported double-digit revenue growth.']
+
+
 def test_full_source_survives_prepare_and_database(repo, classifier, filters, event_factory):
     event = classifier.classify(event_factory())
     original = 'Acme reported revenue of $10 billion. Subscribe for more news.'
@@ -86,7 +95,7 @@ def test_large_translation_is_batched_without_dropping_points(monkeypatch, event
         batch = kwargs['json']
         batches.append(batch)
         return SimpleNamespace(status_code=200, json=lambda: [
-            {'translations': [{'text': item['Text']}]} for item in batch])
+            {'translations': [{'text': '번역 ' + item['Text']}]} for item in batch])
 
     monkeypatch.setattr('requests.post', post)
     assert Translator(config).translate(event)

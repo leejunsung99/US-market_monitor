@@ -19,6 +19,7 @@ from send_compact_preview import heading, polish  # noqa: E402
 
 from us_market_monitor.config import Config  # noqa: E402
 from us_market_monitor.database.repository import Repository  # noqa: E402
+from us_market_monitor.notifications.compact import bullet_lines  # noqa: E402
 from us_market_monitor.notifications.telegram import DeliveryError, Telegram  # noqa: E402
 from us_market_monitor.processors.ollama_preview import validate_result  # noqa: E402
 
@@ -27,7 +28,9 @@ def format_message(title, sections, url):
     lines = [heading("🇺🇸" + title + "🇺🇸")]
     for label, texts in sections.items():
         if texts:
-            lines += ["", heading("📍" + label), *["· " + polish(t) for t in texts]]
+            from html import unescape
+
+            lines += ["", heading("📍" + label), *bullet_lines([unescape(polish(t)) for t in texts])]
     lines += ["", heading("📍원문 링크") + " : " + escape(url), "",
               heading("🇺🇸그로쓰리서치 U.S 채널[실시간 U.S 주요 알림]"), "https://t.me/growth_us"]
     return "\n".join(lines)

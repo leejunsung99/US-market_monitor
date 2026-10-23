@@ -8,6 +8,36 @@ from us_market_monitor.notifications.telegram import DeliveryError
 from us_market_monitor.scheduler.jobs import Radar
 
 
+def test_translation_failure_holds_delivery_for_retry(repo, classifier, filters, event_factory, monkeypatch):
+    sent = []
+    repo.ingest(classifier.classify(event_factory()), filters)
+    monkeypatch.setattr('us_market_monitor.scheduler.jobs.enrich_article', lambda event, **kw: event)
+    radar = Radar([], repo, classifier,
+                  translator=SimpleNamespace(translate=lambda event: False),
+                  telegram=SimpleNamespace(send_article=lambda event: sent.append(event)))
+    radar.dispatch()
+    row = repo.db.execute('SELECT * FROM notifications').fetchone()
+    assert sent == []
+    assert row['status'] == 'pending'
+    assert row['error_message'] == 'translation_pending'
+    assert row['retry_count'] == 1
+
+
+def test_unstructured_economic_english_is_held(repo, classifier, filters, event_factory, monkeypatch):
+    event = classifier.classify(event_factory())
+    event.event_type = 'economic_indicator'
+    repo.ingest(event, filters)
+    sent = []
+    monkeypatch.setattr('us_market_monitor.scheduler.jobs.enrich_article', lambda event, **kw: event)
+    monkeypatch.setattr('us_market_monitor.scheduler.jobs.economic_digest',
+                        lambda event: 'English source.\n※ 공식 발표 원문 발췌 · 예상치 비교 없음')
+    radar = Radar([], repo, classifier,
+                  telegram=SimpleNamespace(send_article=lambda event: sent.append(event)))
+    radar.dispatch()
+    assert sent == []
+    assert repo.db.execute('SELECT error_message FROM notifications').fetchone()[0] == 'economic_korean_review_pending'
+
+
 def test_baseline_blocks_backlog_but_not_event_during_first_fetch(repo, classifier, event_factory):
     collector = SimpleNamespace(name="fake", interval=120)
     radar = Radar([collector], repo, classifier)

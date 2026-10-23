@@ -12,6 +12,13 @@ from us_market_monitor.processors.briefing import brief_points, translation_fing
 from us_market_monitor.processors.normalizer import plain_text
 
 log = logging.getLogger(__name__)
+MONTHS = {
+    'jan': 1, 'feb': 2, 'mar': 3, 'apr': 4, 'may': 5, 'jun': 6,
+    'jul': 7, 'aug': 8, 'sep': 9, 'oct': 10, 'nov': 11, 'dec': 12,
+}
+MONTH_PATTERN = (r'\b(?:January|February|March|April|May|June|July|August|September|'
+                 r'October|November|December|Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)'
+                 r'\b\.?')
 
 
 class Translator:
@@ -41,8 +48,13 @@ class Translator:
         pattern = (
             r"\b(?:8-K|6-K)(?:/A)?\b|(?<!\w)(?:(?:(?:US|NT|HK|A|C)?\$|[€£])\s*)?[−-]?\d[\d,]*(?:\.\d+)?"
             r"(?:\s*[-–—]\s*\d[\d,]*(?:\.\d+)?)?"
-            r"(?:\s*(?:(?:billion|million|trillion|bn|percent|times|[xD])\b|[×%]))?"
+            r"(?:\s*(?:(?:billion|million|trillion|bn|percent|times|[xDBMKT])\b|[×%]))?"
         )
+        # Protect date month names too: Oct. -> 10월 otherwise appears to add
+        # another protected numeric value "10" to a line containing 10/22/2026.
+        # Require a nearby numeric date to avoid interpreting the verb "may".
+        month_date = MONTH_PATTERN + r'(?=\s+\d|\s*$)'
+        pattern = r'\b\d{1,2}:\d{2}(?:\s*[ap]\.m\.)?|' + month_date + '|' + pattern
         if tickers:
             pattern += r"|(?<!\w)(?:" + tickers + r")(?!\w)"
         protected = []
@@ -111,14 +123,19 @@ class Translator:
                 )
                 if not text or actual != Counter(tokens):
                     raise ValueError("protected_value_changed")
+                if re.search(r'[A-Za-z]{3,}', text) and not re.search(r'[가-힣]', text):
+                    raise ValueError('translation_not_korean')
         except (requests.RequestException, ValueError, KeyError, TypeError, IndexError) as error:
             self.disabled_until = time.monotonic() + 60
             reason = str(error) if isinstance(error, ValueError) else type(error).__name__
             # Never log provider response bodies, request URLs or credentials.
-            if reason not in {"provider_rejected", "invalid_response", "protected_value_changed"}:
+            if reason not in {"provider_rejected", "invalid_response", "protected_value_changed",
+                              'translation_not_korean'}:
                 reason = type(error).__name__
-            log.warning("Translation failed (%s); sending original English text", reason)
+            log.warning("Translation failed (%s); Korean delivery must be held for retry", reason)
             return False
+        result = [re.sub(month_date, lambda m: str(MONTHS[m[0][:3].lower()]) + '월',
+                         text, flags=re.I) for text in result]
         event.title_ko, event.summary_ko = result[0], "\n".join(result[1:])
         event.translation_hash = fingerprint
         return True
