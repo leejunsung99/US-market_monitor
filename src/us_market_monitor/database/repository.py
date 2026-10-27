@@ -1,5 +1,6 @@
 import json
 import sqlite3
+import statistics
 from datetime import UTC, timedelta
 from pathlib import Path
 
@@ -37,6 +38,12 @@ CREATE TABLE IF NOT EXISTS notifications (
   next_attempt_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS ix_notification_queue ON notifications(status, next_attempt_at);
+CREATE TABLE IF NOT EXISTS processing_attempts (
+  id INTEGER PRIMARY KEY, event_id INTEGER NOT NULL REFERENCES events(id),
+  completed_at TEXT NOT NULL, success INTEGER NOT NULL, code TEXT NOT NULL,
+  seconds REAL NOT NULL, source_chars INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ix_processing_completed ON processing_attempts(completed_at);
 CREATE TABLE IF NOT EXISTS collector_state (
   source TEXT PRIMARY KEY, last_cursor TEXT NOT NULL,
   last_checked_at TEXT, last_success_at TEXT, error_count INTEGER NOT NULL DEFAULT 0
@@ -98,6 +105,11 @@ class Repository:
                 self.db.execute(
                     "ALTER TABLE seen ADD COLUMN rules_version TEXT NOT NULL DEFAULT ''"
                 )
+            if 'preparation_attempts' not in {
+                row[1] for row in self.db.execute('PRAGMA table_info(notifications)')
+            }:
+                self.db.execute('ALTER TABLE notifications ADD COLUMN preparation_attempts '
+                                'INTEGER NOT NULL DEFAULT 0')
             # Preserve already sent stories across this rule upgrade: reconstruct
             # comparable figures from their retained source excerpts, never re-send them.
             for row in self.db.execute(
@@ -387,6 +399,8 @@ class Repository:
                             "publication_date",
                             "original_download_url",
                             'ollama_summary',
+                            'ollama_work',
+                            'processing_failure',
                         )
                         if k in event.metadata
                     }
@@ -413,7 +427,7 @@ class Repository:
                 ((now - timedelta(hours=max_age_hours)).isoformat(),),
             )
         return self.db.execute(
-            "SELECT e.*,n.retry_count FROM events e JOIN notifications n ON n.event_id=e.id "
+            "SELECT e.*,n.retry_count,n.preparation_attempts FROM events e JOIN notifications n ON n.event_id=e.id "
             "WHERE n.status='pending' AND n.next_attempt_at<=? "
             "ORDER BY CASE e.priority WHEN 'CRITICAL' THEN 0 ELSE 1 END,"
             "CASE e.evidence_level WHEN 'official_source' THEN 0 ELSE 1 END,e.published_at LIMIT ?",
@@ -459,6 +473,31 @@ class Repository:
                 ),
             )
 
+    def preparation_failure(self, event_id, event, attempts, code='translation_pending'):
+        """No Telegram call occurred. Retry this item independently until its age limit.
+
+        Durable verified claims make retries resumable; Telegram's eight-attempt
+        delivery budget is reserved for actual transport failures.
+        """
+        count = attempts + 1
+        delay = min(900, 30 * 2 ** min(count - 1, 5))
+        with self.db:
+            self.update_article(event_id, event)
+            self.db.execute(
+                "UPDATE notifications SET status='pending',preparation_attempts=?,error_message=?,"
+                "next_attempt_at=? WHERE event_id=?",
+                (count, code, (utcnow() + timedelta(seconds=delay)).isoformat(), event_id),
+            )
+
+    def record_preparation(self, event_id, event, success):
+        timing = event.metadata.get('processing_timing', {})
+        code = '' if success else event.metadata.get('processing_failure', {}).get('code', 'translation_pending')
+        with self.db:
+            self.db.execute('INSERT INTO processing_attempts '
+                            '(event_id,completed_at,success,code,seconds,source_chars) VALUES(?,?,?,?,?,?)',
+                            (event_id, utcnow().isoformat(), int(success), code,
+                             timing.get('seconds', 0), len(event.body or event.article_summary or event.summary)))
+
     def prune_seen(self):
         with self.db:
             self.db.execute(
@@ -501,7 +540,31 @@ class Repository:
                 )
             },
             "important_events": self.db.execute("SELECT count(*) FROM events").fetchone()[0],
+            'pipeline_24h': self.pipeline_health(),
         }
+
+    def pipeline_health(self, hours=24):
+        since = (utcnow() - timedelta(hours=hours)).isoformat()
+        counts = {row[0]: row[1] for row in self.db.execute(
+            'SELECT n.status,count(*) FROM notifications n JOIN events e ON e.id=n.event_id '
+            'WHERE e.detected_at>=? GROUP BY n.status', (since,))}
+        result = {
+            'hours': hours,
+            'unique_observations': self.db.execute('SELECT count(*) FROM seen WHERE observed_at>=?', (since,)).fetchone()[0],
+            'selected_by_delivery_status': counts,
+            'last_sent_at_utc': self.db.execute('SELECT max(sent_at) FROM notifications').fetchone()[0],
+            'pending_oldest_detected_at_utc': self.db.execute(
+                "SELECT min(e.detected_at) FROM events e JOIN notifications n ON n.event_id=e.id WHERE n.status='pending'"
+            ).fetchone()[0],
+        }
+        if self.db.execute("SELECT 1 FROM sqlite_master WHERE name='processing_attempts'").fetchone():
+            attempts = self.db.execute('SELECT success,code,seconds FROM processing_attempts WHERE completed_at>=?', (since,)).fetchall()
+            successes = [r['seconds'] for r in attempts if r['success']]
+            result.update(processing_attempts=len(attempts), processing_successes=len(successes),
+                          processing_median_seconds=round(statistics.median(successes), 2) if successes else None,
+                          processing_errors={code: sum(r['code'] == code for r in attempts if not r['success'])
+                                             for code in sorted({r['code'] for r in attempts if not r['success']})})
+        return result
 
     def save_expected_releases(self, calendar_source, entries):
         with self.db:

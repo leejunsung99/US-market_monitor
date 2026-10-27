@@ -1,5 +1,5 @@
 # Broader trial coverage: retain event evidence, relax watchlist and size gates.
-rules_version: '2026-10-19.3'
+rules_version: '2026-10-26.1'
 industry_outlook:
   enabled: true
   metrics:
@@ -30,6 +30,9 @@ lifestyle_headlines:
   - '\b(customer stor(?:y|ies)|creator spotlight|behind the scenes|tips and tricks|how to use)\b'
   - '(할로윈|핼러윈|패션|뷰티).{0,60}(트렌드|유행|아이디어|컬렉션|추천|가이드)'
   - '(컬렉션|디자이너|사진작가|아티스트).{0,80}(아이패드|아이폰|맥북|픽셀).{0,30}(함께|활용|사용)'
+investment_opinion_headlines:
+  - '^prediction\s*:|^can .{0,90}\b(?:stock|shares)\b|^will .{0,90}\bQ[1-4]\b'
+  - '\bmake.or.break\b.{0,50}\b(?:test|earnings)\b'
 historical_headlines:
   - '\b(last year|last month|a year ago|previously announced|retrospective)\b|과거 발표|기존 발표 재조명'
 commentary_url_pattern: '/(?:video|videos|podcast|podcasts)/'
@@ -48,6 +51,9 @@ score_weights:
 hard_exclusions:
   - '\bis .{0,90}(right to|worth buying|a buy)\b|should investors|매수해야 할까'
   - 'price target|target price|analyst rating|upgrades? to buy|downgrades? to|stock picks|stocks? to buy|sponsored|advertorial|worth buying|buy (on )?the dip'
+  - '\bshould (?:I|you|we) (?:buy|sell|invest)|\b(?:time to|time for investors to) (?:buy|sell|load up)\b'
+  - '\b(?:stocks?|shares?).{0,35}\b(?:sell or (?:buy|load up)|buy or sell)\b|\bhidden.{0,35}catalyst.{0,35}(?:ignite|stock)\b'
+  - '\b(?:stock|AI) picks?\b|\b(?:top|best) \d+ stocks?\b|\b(?:see|discover) what \d+ (?:builders|creators)\b'
 hard_speculation:
   - '\b(in discussions?|discussing an acquisition|seeks to acquire)\b'
   - '\b(rumou?rs?|reportedly|unconfirmed|in talks|in negotiations|negotiating|might|could|may|expected to|would)\b|루머|미확인|추측|협상 중'
@@ -66,6 +72,7 @@ industry_rules:
     patterns:
       - '\b(announces?|announced|unveils?|unveiled|confirms?|confirmed|discloses?|disclosed).{0,30}(plans? to|plans? for|launch schedule|roadmap)'
       - '\b(says|said|states|stated).{0,35}(plans? to|will launch|will introduce|will release)'
+      - '\b(?:outlines?|outlined|details?|detailed|presents?|presented|updates?|updated|maps|mapped)\b.{0,100}\b(?:technology|product|memory|HBM|DRAM|NAND)\b.{0,70}\broadmap\b'
       - '(출시|양산).{0,15}(계획|일정).{0,20}(발표|공개|확정)'
   - type: semiconductor_technology
     label: 반도체 제품 출시
@@ -83,7 +90,7 @@ high_threshold: 2
 critical_threshold: 7
 dedup_window_hours: 36
 dedup_similarity: 0.62
-minimum_deal_usd: 500000000
+minimum_deal_usd: 250000000
 material_scale_patterns:
   - '\b(major|landmark|strategic|giant|mega|transformative)\b|대규모|핵심 사업'
 exclusions:
@@ -140,10 +147,13 @@ rules:
       - '(closes|blocks|shuts|halts).{0,50}(strait of hormuz|suez canal|oil exports|gas exports)'
       - '(opec|oil producer).{0,60}(announces|agrees).{0,40}(production cut|output cut)'
   - type: earnings_guidance
-    label: 실적 전망 변경
+    label: 실적·투자 전망 발표
     scope: company
+    evidence_actor_required: true
     patterns:
       - '(raises|cuts|slashes|withdraws|revises|updates|lowers|boosts).{0,40}(guidance|earnings outlook|revenue outlook|profit forecast|annual forecast)'
+      - '\b(?:raises|raised|cuts|cut|slashes|slashed|revises|revised|lowers|lowered|boosts|boosted)\b.{0,40}\b(?:capex|capital expenditure|capital spending)\b'
+      - '\b(?:expects?|forecasts?)\b.{0,45}\b(?:revenue|sales|profit|earnings|demand)\b.{0,45}\b(?:grow|growth|increase|decline|fall|rise|double|recover|weaken)\b'
       - '(실적|매출|이익).{0,20}전망.{0,12}(상향|하향|철회|수정)'
   - type: earnings
     label: 실적 발표
@@ -152,6 +162,7 @@ rules:
       - '(reports|announces|releases|posts).{0,60}(quarterly (results|earnings|revenue)|financial results|record (revenue|profit)|earnings beat|earnings miss)'
       - '(reports|announces|releases|posts).{0,50}(first|second|third|fourth|Q[1-4]).{0,35}(quarter|results|earnings|EPS|revenue)'
       - '실적.{0,15}(발표|예상 상회|예상 하회)'
+      - '\b(?:reported|announced|released|posted)\b.{0,60}\b(?:quarterly (?:results|earnings|revenue)|financial results|Q[1-4] (?:results|earnings))\b'
   - type: acquisition
     label: 인수합병 발표
     scope: company

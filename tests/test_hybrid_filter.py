@@ -13,7 +13,7 @@ def test_clear_earnings_passes_without_llm(classifier, event_factory):
 
 
 def test_review_candidate_routes_to_llm(classifier, event_factory):
-    event = event_factory("NVIDIA reports quarterly results", summary="The company beat expectations.")
+    event = event_factory("NVIDIA earnings update", summary="The company beat expectations.")
     assert route_event(event, classifier).route == "llm_review"
 
 

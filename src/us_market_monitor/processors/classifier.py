@@ -5,7 +5,7 @@ from urllib.parse import urlsplit
 
 from us_market_monitor.collectors.economic import LABELS, trusted_release
 from us_market_monitor.database.models import Event, utcnow
-from us_market_monitor.processors.earnings import EARNINGS_TYPES, earnings_facts
+from us_market_monitor.processors.earnings import earnings_facts
 from us_market_monitor.processors.industry import IndustryRules
 from us_market_monitor.processors.normalizer import canonical_url, digest, plain_text
 from us_market_monitor.processors.outlook import industry_outlook
@@ -87,6 +87,8 @@ class Classifier:
         # before reading body text, which can contain unrelated product boilerplate.
         if any_match(self.filters.get("lifestyle_headlines", []), plain_text(event.title)):
             return self._decision(event, "reject", "lifestyle_or_product_usage_story")
+        if any_match(self.filters.get('investment_opinion_headlines', []), event.title):
+            return self._decision(event, 'reject', 'investment_opinion_or_preview')
         # Broad coverage applies to policy releases. Company news still needs a
         # concrete material action even when the issuer is a verified source.
         if (
@@ -114,6 +116,12 @@ class Classifier:
             event.industry = "공식 정책·기업 발표"
             return self._decision(event, "approve", "verified_official_announcement")
         headline, summary = plain_text(event.title), plain_text(event.summary)
+        question = re.search(r'\b(?:can|will|should|is it time)\b.{0,240}\?', headline, re.I)
+        if question and not re.search(
+            r'\b(?:reports?|reported|announces?|announced|cuts?|raises?|revises?|launches?|signs?)\b',
+            headline[:question.start()], re.I,
+        ):
+            return self._decision(event, 'reject', 'investment_opinion_or_preview')
         focus = headline + ". " + summary
         if any_match(self.filters.get("hard_exclusions", []), focus):
             return self._decision(event, "reject", "promotion_or_historical_content")
@@ -176,12 +184,26 @@ class Classifier:
             )
         approved = self._classify_legacy(event)
         if approved:
-            if event.event_type in EARNINGS_TYPES and not event.metadata.get("official"):
+            if event.event_type == 'earnings' and not event.metadata.get("official"):
                 facts = earnings_facts(event)
-                if not facts["metrics"] and facts["guidance_status"] != "withdrawn":
+                # A publisher's release notice may have no figures in its API
+                # teaser. Fetch the actual article instead of dropping it here.
+                released = re.search(
+                    r'\b(?:reports?|reported|announces?|announced|releases?|released|posts?|posted)\b'
+                    r'.{0,65}\b(?:financial results|quarterly (?:results|earnings)|'
+                    r'Q[1-4] (?:results|earnings))\b', headline, re.I,
+                )
+                preview = re.search(
+                    r'\b(?:will report|to report|when it reports|ahead of|preview|'
+                    r'after (?:the )?(?:market )?clos(?:e|es|ing)|after the closing bell|'
+                    r'before (?:the )?(?:market )?opens?)\b', focus, re.I,
+                )
+                if not facts["metrics"] and (not released or preview):
                     return self._decision(
                         event, "review", "earnings_missing_reported_figures", evidence=focus[:700]
                     )
+                if not facts['metrics']:
+                    event.metadata['release_notice_without_figures'] = True
             return self._decision(
                 event,
                 "approve",

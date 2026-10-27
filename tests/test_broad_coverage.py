@@ -32,7 +32,7 @@ def test_broad_coverage_includes_unlisted_companies(classifier, event_factory, t
         "Acme could confirm data breach",
         "Acme reportedly signs $500 million contract for data center",
         "Acme explains why cloud security matters",
-        "Acme signs $499 million contract for data center",
+        "Acme signs $249 million contract for data center",
         "Acme reports quarterly results",
         "Acme sponsored: launches new cloud platform",
         "Why Acme shares rise after data breach",
@@ -62,4 +62,4 @@ def test_unlisted_companies_do_not_share_a_dedup_entity(classifier, event_factor
 def test_trial_thresholds(filters):
     assert filters["high_threshold"] == 2
     assert filters["critical_threshold"] == 7
-    assert filters["minimum_deal_usd"] == 500_000_000
+    assert filters["minimum_deal_usd"] == 250_000_000

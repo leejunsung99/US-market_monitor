@@ -50,7 +50,9 @@ def test_translation_failure_holds_delivery_for_retry(repo, classifier, filters,
     assert sent == []
     assert row['status'] == 'pending'
     assert row['error_message'] == 'translation_pending'
-    assert row['retry_count'] == 1
+    assert row['retry_count'] == 0
+    assert row['preparation_attempts'] == 1
+    assert radar.notification_due == 0
 
 
 def test_unstructured_economic_english_is_held(repo, classifier, filters, event_factory, monkeypatch):

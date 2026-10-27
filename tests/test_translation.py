@@ -11,7 +11,7 @@ def processor(monkeypatch, result=None):
         def __init__(self, model, url, timeout):
             self.model, self.system_prompt = model, ''
 
-        def summarize(self, source, metadata):
+        def summarize_resumable(self, source, metadata, work):
             if isinstance(result, Exception):
                 raise result
             return result or {
@@ -21,7 +21,7 @@ def processor(monkeypatch, result=None):
                 'limitations_ko': '',
             }, {'wall_seconds': 1}
 
-    monkeypatch.setattr('us_market_monitor.processors.ollama.OllamaPreview', Client)
+    monkeypatch.setattr('us_market_monitor.processors.ollama.GroundedOllama', Client)
     return OllamaProcessor(SimpleNamespace(ollama_model='local', ollama_base_url='http://localhost:11435',
                                            ollama_timeout=600))
 
@@ -33,7 +33,7 @@ def test_production_generates_formats_and_reuses_local_cache(monkeypatch, event_
     assert client.translate(event)
     assert event.translation_hash.startswith('ollama:')
     assert '매출 성장 확인했음' in format_compact_event(event)
-    monkeypatch.setattr(client.client, 'summarize', lambda *args: (_ for _ in ()).throw(AssertionError('cached')))
+    monkeypatch.setattr(client.client, 'summarize_resumable', lambda *args: (_ for _ in ()).throw(AssertionError('cached')))
     assert client.translate(event)
 
 
@@ -56,6 +56,18 @@ def test_source_uses_full_body_and_complete_short_headline(event_factory):
     assert 'higher demand' in source_text(event)
 
 
+def test_commercial_release_keeps_commitment_duration_allocation_and_constraints(event_factory):
+    event = event_factory('Oracle announces investment', event_type='contract_investment',
+        body='/PRNewswire/ Oracle committed $1 billion.\nSpanning the next four years, the investment expands programs.\n'
+             'It encompasses planned investments in training and cloud migration.\n'
+             'Oracle provides tools for partners to develop AI solutions.\n'
+             'The agreement remains subject to regulatory approval.')
+    source = source_text(event)
+    assert '$1 billion' in source and 'four years' in source
+    assert 'planned investments' in source and 'regulatory approval' in source
+    assert 'provides tools' not in source
+
+
 def test_ollama_evidence_survives_database_roundtrip(monkeypatch, repo, classifier, filters, event_factory):
     event = classifier.classify(event_factory())
     event.body = 'Meta reported revenue growth.'
@@ -65,29 +77,22 @@ def test_ollama_evidence_survives_database_roundtrip(monkeypatch, repo, classifi
     assert loaded.metadata['ollama_summary'] == event.metadata['ollama_summary']
 
 
-def test_invalid_claim_is_regenerated_from_its_evidence_only(monkeypatch, event_factory):
-    event = event_factory('Meta results', summary='Meta reported revenue growth. Guidance remains unchanged.')
+def test_failure_diagnostics_and_partial_work_survive_retry(monkeypatch, event_factory, repo, classifier, filters):
+    event = classifier.classify(event_factory())
     client = processor(monkeypatch)
-    bad = {'title_ko': '실적',
-           'summary': {'text_ko': '매출 성장', 'evidence': 'Meta reported revenue growth.'},
-           'points': [{'text_ko': '2027년 가이던스 유지', 'evidence': 'Guidance remains unchanged.'}],
-           'limitations_ko': ''}
-    calls = []
 
-    def summarize(source, metadata):
-        calls.append(source)
-        if len(calls) == 1:
-            error = ValueError('unsupported_claim_numbers')
-            error.result, error.stats = bad, {'wall_seconds': 1}
-            raise error
-        assert source == 'Guidance remains unchanged.'
-        fixed = {'text_ko': '가이던스 유지', 'evidence': source}
-        return {'title_ko': '전망', 'summary': fixed, 'points': [fixed], 'limitations_ko': ''}, {'wall_seconds': 1}
+    def fail(source, metadata, work):
+        work['batches'] = {'0': {'claims': ['verified']}}
+        raise ValueError('unsupported_claim_numbers')
 
-    monkeypatch.setattr(client.client, 'summarize', summarize)
-    assert client.translate(event)
-    assert event.metadata['ollama_summary']['result']['points'][0]['text_ko'] == '가이던스 유지'
-    assert len(calls) == 2
+    monkeypatch.setattr(client.client, 'summarize_resumable', fail)
+    assert not client.translate(event)
+    event_id = repo.ingest(event, filters)
+    with repo.db:
+        repo.update_article(event_id, event)
+    loaded = repo.row_event(repo.db.execute('SELECT * FROM events').fetchone())
+    assert loaded.metadata['ollama_work']['batches']['0']['claims'] == ['verified']
+    assert loaded.metadata['processing_failure']['code'] == 'unsupported_claim_numbers'
 
 
 def test_gross_margin_label_is_preserved_in_final_korean_card():

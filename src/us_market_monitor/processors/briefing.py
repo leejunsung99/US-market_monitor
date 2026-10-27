@@ -25,7 +25,8 @@ PROMOTION = re.compile(
     r'view the five stocks|this report names|free report|'
     r'preferred source on google|sign up for|'
     r'may earn commission or revenue|contributed to this report|'
-    r'has written well over|editor:|'
+    r'has written well over|editor:|to learn more|see related.{0,80}announcement|'
+    r'TIKR lets you|TIKR.s valuation model|full breakdown of Buy, Hold, and Sell ratings|'
     r'^(?:about .{0,70} )?.{0,70} is a technology company that develops', re.I,
 )
 ACTION = re.compile(
@@ -91,6 +92,15 @@ def sentences(text, title=""):
             sentence = sentence.replace('\ue000', '.')
             sentence = sentence.strip().lstrip("• ")
             if not sentence or NOISE.search(sentence) or PROMOTION.search(sentence):
+                continue
+            # Generic press-release benefit statements are not new financial
+            # facts. Keep quantified details, investment periods and milestones.
+            if (re.search(r'innovation|business value|business outcomes|business transformation|'
+                          r'customer success|choice and flexibility', sentence, re.I)
+                    and not re.search(r'[$%\d]|\b(?:one|two|three|four|five|six|seven|eight|nine|ten)'
+                                      r'[- ]years?\b|\b(?:revenue|income|margin|costs?|'
+                                      r'guidance|production|shipments?|capacity|launches?|launched)\b',
+                                      sentence, re.I)):
                 continue
             if re.match(
                 r"\d+\s+(?:\d+\s+)?(?:Includes|Excludes|See|Refer|Amounts|Reflects)\b",
@@ -180,8 +190,19 @@ def translation_fingerprint(event):
     return VERSION + ":" + digest("\n".join([event.title[:350], *brief_points(event)]))
 
 
+def expand_money_ranges(text):
+    """In $250-$275 million, the shared scale applies to both endpoints."""
+    return re.sub(
+        r'\$\s*(\d[\d,]*(?:\.\d+)?)\s*([-–]|to)\s*\$?\s*'
+        r'(\d[\d,]*(?:\.\d+)?)\s*(trillion|billion|million|bn|[BMK]\b)',
+        lambda m: '$' + m[1] + ' ' + m[4] + ' ' + m[2] + ' $' + m[3] + ' ' + m[4],
+        text, flags=re.I,
+    )
+
+
 def polish_korean(text, source):
     """Deterministic display conversions after source-number validation."""
+    text = expand_money_ranges(text)
     if re.search(r"additional(?:ly)?", source, re.I):
         text = re.sub(r"한\s+(?=\d[\d.]*[-–]\d[\d.]*x)", "추가로 ", text)
     text = text.replace("초기 접근 테스트", "초기 테스트")

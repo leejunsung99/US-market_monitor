@@ -17,6 +17,10 @@ from us_market_monitor.processors.normalizer import parse_time
 log = logging.getLogger(__name__)
 
 
+class PreparationError(Exception):
+    """No Telegram request was attempted; other queued articles can proceed."""
+
+
 class Radar:
     def __init__(
         self,
@@ -124,6 +128,7 @@ class Radar:
         for row in rows:
             if self.stop.is_set() or not self.repo.claim(row["id"]):
                 break
+            preparation_recorded = False
             try:
                 event = self.repo.row_event(row)
                 if hasattr(self.telegram, "send_article"):
@@ -133,20 +138,28 @@ class Radar:
                         except Stopped:
                             raise
                         except Exception:
-                            raise DeliveryError('summary_worker_failed', retryable=True, retry_after=60) from None
+                            raise PreparationError('summary_worker_failed') from None
                     else:
                         event, translated = self._prepare_event(event)
                     with self.repo.db:
                         self.repo.update_article(row["id"], event)
+                    self.repo.record_preparation(row['id'], event, translated)
+                    preparation_recorded = True
                     if (event.event_type != 'monitor_alert' and not translated
                             and (background or event.event_type != 'economic_indicator')):
-                        raise DeliveryError('translation_pending', retryable=True, retry_after=60)
+                        raise PreparationError('translation_pending')
                     if (event.event_type == 'economic_indicator' and not translated
                             and '공식 발표 원문 발췌' in economic_digest(event)):
-                        raise DeliveryError('economic_korean_review_pending', retryable=True, retry_after=300)
+                        raise PreparationError('economic_korean_review_pending')
                     message_id = self.telegram.send_article(event)
                 else:
                     message_id = self.telegram.send(format_event(event))
+            except PreparationError as error:
+                if not preparation_recorded:
+                    event.metadata['processing_failure'] = {'code': str(error)}
+                    self.repo.record_preparation(row['id'], event, False)
+                self.repo.preparation_failure(row['id'], event, row['preparation_attempts'], str(error))
+                log.warning('Preparation held event=%s error=%s; other events remain eligible', row['id'], error)
             except DeliveryError as error:
                 self.repo.delivery_failure(row["id"], error, row["retry_count"])
                 if error.retry_after:
@@ -165,8 +178,10 @@ class Radar:
                 log.info("Telegram sent event=%s message_id=%s", row["id"], message_id)
 
     def _prepare_event(self, event):
+        started = time.monotonic()
         enrich_article(event, stop=self.stop)
         translated = self.translator.translate(event) if self.translator else False
+        event.metadata['processing_timing'] = {'seconds': round(time.monotonic() - started, 2)}
         return event, translated
 
     def run(self, once=False):

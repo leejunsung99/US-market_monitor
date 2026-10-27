@@ -29,12 +29,10 @@ def test_numbers_do_not_make_commentary_a_release(classifier, event_factory):
         "Shares gained 5% and market capitalization was $10 billion.",
     ],
 )
-def test_nonnumeric_earnings_go_to_review(classifier, event_factory, summary):
+def test_confirmed_release_teaser_fetches_details_even_without_figures(classifier, event_factory, summary):
     event = event_factory("NVIDIA reports quarterly results", summary=summary)
-    assert classifier.classify(event) is None
-    assert (
-        event.metadata["classification_decision"]["reason"] == "earnings_missing_reported_figures"
-    )
+    assert classifier.classify(event).event_type == 'earnings'
+    assert event.metadata['release_notice_without_figures']
 
 
 def test_official_release_without_numbers_still_passes(classifier, event_factory):

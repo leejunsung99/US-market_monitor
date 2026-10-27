@@ -14,6 +14,8 @@ COMPANY_NAMES = {
     "MSFT": "마이크로소프트", "AMZN": "아마존", "AVGO": "브로드컴",
     "MU": "마이크론", "AMD": "AMD", "INTC": "인텔", "QCOM": "퀄컴",
     "SMCI": "슈퍼마이크로", "NFLX": "넷플릭스", "LLY": "일라이릴리",
+    'ORCL': '오라클', 'CRWD': '크라우드스트라이크', 'PANW': '팔로알토네트웍스',
+    'OKTA': '옥타', 'GGG': '그라코', 'QS': '퀀텀스케이프',
 }
 NOISE = re.compile(
     r"our .{0,30}portfolio|price prediction|subscribe|trade.in|unlimited plan|"

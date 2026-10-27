@@ -13,6 +13,7 @@ HARD_REJECT = {
     "missing_source_metadata", "invalid_source_url", "future_publication",
     "invalid_economic_release", "lifestyle_or_product_usage_story",
     "promotion_or_historical_content", "historical_headline",
+    'investment_opinion_or_preview',
 }
 MATERIAL = re.compile(
     r"earnings|revenue|profit|guidance|capex|investment|acqui|merger|contract|"

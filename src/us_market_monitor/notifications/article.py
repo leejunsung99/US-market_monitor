@@ -58,6 +58,11 @@ def enrich_article(event, *, client=None, stop=None):
     event.image_url = image_url(event.image_url)
     if event.event_type == "monitor_alert":
         return event
+    if event.body:
+        # Retained publisher text is sufficient for retries; avoid repeated fetches
+        # and changing the source fingerprint while repairing the same article.
+        prepare_brief(event)
+        return event
     if event.source in {
         "SEC EDGAR",
         "BLS",

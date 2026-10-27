@@ -77,3 +77,51 @@ def test_numeric_placeholders_roundtrip_currency_ranges_and_negative_change():
 def test_unknown_placeholder_fails_closed():
     with pytest.raises(ValueError, match="unknown_numeric_placeholder"):
         restore_numbers("__VALUE_UNKNOWN__", {})
+
+
+def test_capitalized_currency_scale_is_protected():
+    protected, values = protect_numbers('Oracle commits $1 Billion over four years.')
+    assert values['__VALUE_A__'] == '$1 Billion'
+    assert 'Billion' not in protected
+
+
+@pytest.mark.parametrize('text', ['투자 $1 million', '투자 $1 억 달러', '투자 $1 billion 억 달러'])
+def test_wrong_monetary_scale_cannot_pass_just_because_digits_match(text):
+    source = 'Oracle announced a $1 billion investment.'
+    claim = {'text_ko': text, 'evidence': source}
+    result = {'title_ko': '오라클 투자', 'summary': claim, 'points': [claim], 'limitations_ko': ''}
+    with pytest.raises(ValueError, match='currency_scale|unsupported_claim_numbers'):
+        validate_result(result, source)
+
+
+def test_spelled_out_quantity_and_abbreviated_month_are_supported():
+    source = 'Oracle announced a four-year plan on Oct. 23.'
+    claim = {'text_ko': '10월 23일 4년 계획 발표', 'evidence': source}
+    validate_result({'title_ko': '계획', 'summary': claim, 'points': [claim], 'limitations_ko': ''}, source)
+
+
+def test_compound_top_ten_is_not_negative_ten():
+    from us_market_monitor.processors.ollama_preview import numbers
+
+    assert set(numbers('two top-10 OEMs')) == {'2', '10'}
+    assert set(numbers('growth -10%')) == {'-10'}
+
+
+def test_shared_monetary_range_scale_survives_validation_and_rendering():
+    from us_market_monitor.processors.briefing import polish_korean
+
+    source = 'Adjusted EBITDA loss guidance is $250-$275 million.'
+    claim = {'text_ko': '조정 EBITDA 손실 전망 $250 million - $275 million', 'evidence': source}
+    validate_result({'title_ko': '전망', 'summary': claim, 'points': [claim], 'limitations_ko': ''}, source)
+    text = polish_korean('손실 전망 $250-$275 million', '')
+    assert '2.5억 달러' in text and '2.75억 달러' in text
+    assert '250 달러' not in text
+
+
+def test_exact_quantity_conversions_and_unsigned_range_endpoints_are_supported():
+    from us_market_monitor.processors.ollama_preview import numbers
+
+    assert numbers('3 million GPUs') == numbers('300만 GPU')
+    assert numbers('$1 billion') == numbers('10억 달러')
+    assert numbers('5-10%') == numbers('5~10%')
+    assert numbers('$1 billion') != numbers('1억 달러')

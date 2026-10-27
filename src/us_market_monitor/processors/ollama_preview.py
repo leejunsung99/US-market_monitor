@@ -4,9 +4,12 @@ import json
 import re
 import time
 from collections import Counter
+from decimal import Decimal
 from urllib.parse import urlsplit
 
 import requests
+
+from us_market_monitor.processors.briefing import expand_money_ranges
 
 PROMPT_VERSION = "korean-news-preview-v5-material"
 SYSTEM = """You translate and summarize financial news into clear, natural Korean.
@@ -59,6 +62,14 @@ def normalized(text):
 
 
 def numbers(text):
+    text = expand_money_ranges(text)
+    # Compound labels (top-10, Q3-2026) contain separators, not negative values.
+    text = re.sub(r'\b([A-Za-z]\w*)-(?=\d)', r'\1 ', text)
+    text = re.sub(r'(?<=\d)[-–](?=\d)', ' ', text)
+    # Legitimate translations of spelled-out quantities and abbreviated dates.
+    words = 'zero one two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen sixteen seventeen eighteen nineteen twenty'.split()
+    for value, word in enumerate(words):
+        text = re.sub(r'\b' + word + r'\b', str(value), text, flags=re.I)
     # Explicit word-form periods are equivalent to their Korean numeric spelling.
     for word, value in {"first": "1", "second": "2", "third": "3", "fourth": "4"}.items():
         text = re.sub(r"\b" + word + r"(?=[ -]quarter\b)", value, text, flags=re.I)
@@ -67,7 +78,20 @@ def numbers(text):
     months = "January February March April May June July August September October November December".split()
     for value, month in enumerate(months, 1):
         text = re.sub(r"\b" + month + r"\b", str(value), text, flags=re.I)
-    return Counter(n.replace(",", "") for n in re.findall(r"[-+]?\d[\d,]*(?:\.\d+)?", text))
+        text = re.sub(r'\b' + month[:3] + r'\b\.?', str(value), text, flags=re.I)
+    # Compare quantities, not their typography: 3 million == 300만, $1 billion
+    # == 10억 달러. Decimal keeps this exact; currencies are validated separately.
+    scales = {'trillion': 10**12, 'billion': 10**9, 'million': 10**6, 'thousand': 10**3,
+              'bn': 10**9, 'b': 10**9, 'm': 10**6, 'k': 10**3,
+              '조': 10**12, '억': 10**8, '만': 10**4, '천': 10**3}
+    values = []
+    for match in re.finditer(r'([-+]?\d[\d,]*(?:\.\d+)?)\s*'
+                            r'(trillion(?![A-Za-z])|billion(?![A-Za-z])|million(?![A-Za-z])|'
+                            r'thousand(?![A-Za-z])|bn(?![A-Za-z])|[BMK](?![A-Za-z0-9])|조|억|만|천)?',
+                            text, re.I):
+        value = Decimal(match[1].replace(',', '')) * scales.get((match[2] or '').lower(), 1)
+        values.append(format(value.normalize(), 'f'))
+    return Counter(values)
 
 
 def protect_numbers(source):
@@ -88,7 +112,33 @@ def protect_numbers(source):
         values[token] = match[0]
         return token
 
-    return re.sub(pattern, replace, source), values
+    return re.sub(pattern, replace, source, flags=re.I), values
+
+
+def money_amounts(text):
+    """Validate scale as well as digits: $1 million is not $1 billion."""
+    text = expand_money_ranges(text)
+    amounts = set()
+    scales = {'trillion': 10**12, 'billion': 10**9, 'million': 10**6,
+              'bn': 10**9, 'b': 10**9, 'm': 10**6, 'k': 10**3,
+              '조': 10**12, '억': 10**8, '만': 10**4, '천': 10**3}
+    pattern = (r'(?P<currency>US\$|NT\$|\$)?\s*(?P<value>\d[\d,]*(?:\.\d+)?)\s*'
+               r'(?P<scale>trillion|billion|million|bn(?![A-Za-z])|[BMK](?![A-Za-z0-9])|조|억|만|천)?'
+               r'(?P<tail>\s*달러)?')
+    for match in re.finditer(pattern, text, re.I):
+        currency, scale, tail = match['currency'], match['scale'], match['tail']
+        if not currency and not tail:
+            continue
+        if (currency == 'NT$'):
+            currency = 'TWD'
+        else:
+            currency = 'USD' if currency or tail else 'amount'
+        value = Decimal(match['value'].replace(',', '')) * scales.get((scale or '').lower(), 1)
+        amounts.add((currency, value))
+        # Tokens already include scale/currency. Appending another scale corrupts it.
+        if scale and re.match(r'\s*(?:조|억|만|천)\s*달러', text[match.end():]):
+            raise ValueError('duplicate_currency_scale')
+    return amounts
 
 
 def restore_numbers(value, values):
@@ -131,8 +181,14 @@ def validate_result(result, source):
             raise ValueError("evidence_not_in_source")
         if not re.search(r"[가-힣]", text):
             raise ValueError("not_korean")
-        if numbers(text) - numbers(evidence):
+        # Repeating a supported figure in a comparison is not a new number.
+        if set(numbers(text)) - set(numbers(evidence)):
             raise ValueError("unsupported_claim_numbers")
+        source_amounts = money_amounts(evidence)
+        for currency, value in money_amounts(text):
+            if not any(value == original and (currency == kind or currency == 'amount')
+                       for kind, original in source_amounts):
+                raise ValueError('unsupported_currency_scale')
     return result
 
 

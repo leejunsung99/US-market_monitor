@@ -35,6 +35,15 @@ def nominal(text):
                                 ('보였다', '보였음'), ('했다', '했음'),
                                 ('예상된다', '예상'), ('전망된다', '전망'), ('될 것이다', '예상')]:
         text = re.sub(re.escape(ending) + r'[.!。]?$', replacement, text.strip())
+    for ending, replacement in [('한다', '함'), ('된다', '됨'), ('있다', '있음'),
+                                ('없다', '없음'), ('었다', '었음'), ('였다', '였음'),
+                                ('이다', '임'), ('했다', '했음'), ('컸다', '컸음'),
+                                ('준다', '줌'), ('보인다', '보임')]:
+        text = re.sub(re.escape(ending) + r'[.!。]?$', replacement, text.strip())
+    text = text.rstrip('.!。')
+    if len(text) > 1 and text.endswith('다') and '가' <= text[-2] <= '힣':
+        if (ord(text[-2]) - 0xAC00) % 28 == 20:  # past-tense 받침 ㅆ: 올랐다 → 올랐음
+            text = text[:-1] + '음'
     return text
 
 
