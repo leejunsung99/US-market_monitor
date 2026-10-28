@@ -65,6 +65,10 @@ def notification_category(event):
 
 
 def format_compact_event(event, *, test=False):
+    if event.metadata.get('caption_brief'):
+        from us_market_monitor.notifications.caption import render_caption
+
+        return render_caption(event, event.metadata['caption_brief'], test=test)
     title, summary = RuleSummarizer().summarize(event)
     record = event.metadata.get('ollama_summary')
     if record:

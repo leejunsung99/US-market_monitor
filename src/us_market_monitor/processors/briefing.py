@@ -229,13 +229,14 @@ def polish_korean(text, source):
                 return value + unit + " 달러"
 
     text = re.sub(
-        r"(?<![A-Za-z])\$\s*(\d[\d,]*(?:\.\d+)?)(?:\s*(trillion|billion|million|bn|[BMTK])\b)?",
+        r"(?<![A-Za-z])\$\s*(\d[\d,]*(?:\.\d+)?)(?:\s*(trillion|billion|million|bn|[BMTK])(?![A-Za-z]))?",
         dollars,
         text,
         flags=re.I,
     )
     for before, after in (("과", "와"), ("을", "를"), ("으로", "로"), ("로", "로"), ("와", "와")):
         text = re.sub(r"달러\s+" + before + r"(?=\s|[,.])", "달러" + after, text)
+    text = re.sub(r'달러\s+달러', '달러', text)
     return text
 
 

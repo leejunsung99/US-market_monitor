@@ -121,6 +121,15 @@ def checked_claim(item, units, source):
 
 def validate_financial_meaning(text, evidence):
     """Catch common material polarity/period errors that digit checks cannot detect."""
+    if (re.search(r'\b(?:talks|negotiations)\b', evidence, re.I)
+            and re.search(r'\bacquir\w*|\btransaction\b', evidence, re.I)
+            and '인수' in text and (not re.search(r'협상|논의|검토|추진|보도|가능|불확실', text)
+                                      or re.search(r'인수\s*(?:완료|성사|확정)', text))):
+        raise ValueError('lost_transaction_uncertainty')
+    if (re.search(r'trailing\s+(?:12|twelve)[- ]months?', evidence, re.I)
+            and re.search(r'전년\s*동기|전년\s*대비', text)
+            and not re.search(r'year.over.year|year.ago|prior.year', evidence, re.I)):
+        raise ValueError('changed_comparison_period')
     beat = re.search(r'\b(?:beat|beats|beating|exceed\w*|above)\b.{0,35}\b(?:estimates?|expectations?|consensus)\b', evidence, re.I)
     miss = re.search(r'\b(?:miss\w*|below|short of)\b.{0,35}\b(?:estimates?|expectations?|consensus)\b', evidence, re.I)
     if beat and not miss and re.search(r'미달|하회|밑돌', text) and not re.search(r'상회|웃돌', text):

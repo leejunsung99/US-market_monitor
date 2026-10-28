@@ -21,8 +21,9 @@ from us_market_monitor.config import Config, ConfigError
 from us_market_monitor.database.repository import Repository
 from us_market_monitor.http import HttpClient, Stopped
 from us_market_monitor.notifications.telegram import DeliveryError, Telegram
+from us_market_monitor.processors.caption import CaptionProcessor
 from us_market_monitor.processors.classifier import Classifier
-from us_market_monitor.processors.ollama import OllamaProcessor, ensure_gpu_server
+from us_market_monitor.processors.ollama import ensure_gpu_server
 from us_market_monitor.scheduler.jobs import Radar
 
 log = logging.getLogger(__name__)
@@ -280,7 +281,7 @@ def main(argv=None):
                 repo,
                 Classifier(config.watchlist, config.filters),
                 telegram=telegram,
-                translator=OllamaProcessor(config),
+                translator=CaptionProcessor(config),
                 monitor_releases=config.release_monitor_enabled and not args.economic_only,
                 dry_run=args.dry_run,
                 max_notification_age=config.max_notification_age,

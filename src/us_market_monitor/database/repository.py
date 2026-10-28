@@ -400,6 +400,8 @@ class Repository:
                             "original_download_url",
                             'ollama_summary',
                             'ollama_work',
+                            'caption_brief',
+                            'caption_work',
                             'processing_failure',
                         )
                         if k in event.metadata

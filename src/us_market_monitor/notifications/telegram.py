@@ -72,7 +72,9 @@ class Telegram:
         return last_id
 
     def _send_card(self, text, photo):
-        if photo and len(text.encode("utf-16-le")) // 2 <= 1024:
+        from us_market_monitor.notifications.caption import caption_units
+
+        if photo and caption_units(text) <= 1024:
             try:
                 return self._request("sendPhoto", {"photo": photo, "caption": text,
                                                    "parse_mode": "HTML"})
