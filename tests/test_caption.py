@@ -86,6 +86,64 @@ def test_invalid_highlight_and_background_fact_cannot_be_published(event_factory
         validate_caption_result(bad, record['units'], record['source'])
 
 
+def test_outline_normalized_emphasis_survives_validation(event_factory):
+    """ground_display must emphasize the delivered outline, not the pre-outline wording."""
+    event, record = sample(event_factory)
+    revenue = record['result']['items'][1]['source_id']
+    basis = next(u['text'] for u in record['units'] if u['id'] == revenue)
+    item = ground_display(
+        {'text_ko': 'Grace 최근 12 개월 매출 $5 billion 증가했습니다', 'focus_ko': '', 'section': '', 'priority': 2},
+        basis,
+    )
+    # nominal() rewrites the ending, so a pre-normalization span would be lost here.
+    assert item['text_ko'] == 'Grace 최근 12 개월 매출 $5 billion 증가'
+    assert item['focus_ko'] in item['text_ko']
+    result = {'title_ko': record['result']['title_ko'],
+              'items': [{**item, 'source_id': revenue, 'priority': 2}]}
+    assert validate_caption_result(result, record['units'], record['source'])
+
+
+def test_polite_verb_endings_outside_the_whitelist_become_nominal():
+    """A faithful bullet must not be held forever by the outline style gate alone."""
+    from us_market_monitor.notifications.compact import nominal
+    from us_market_monitor.processors.ollama_grounded import checked_claim
+
+    assert nominal('3분기 재무 결과를 공표했습니다') == '3분기 재무 결과를 공표'
+    assert nominal('신규 공장 가동을 개시하였습니다') == '신규 공장 가동을 개시'
+    assert nominal('계약이 체결되었습니다') == '계약이 체결'
+    source = ('On October 28, 2026, GE Vernova Inc. released its third-quarter 2026 '
+              'financial results on its investor relations website.')
+    units = source_units(source)
+    claim = checked_claim(
+        {'source_ids': [1], 'text_ko': 'GE Vernova는 2026년 3분기 재무 결과를 공표했습니다'}, units, source)
+    assert claim['text_ko'].endswith('공표')
+
+
+def test_long_subject_is_shortened_instead_of_failing_every_retry(event_factory, watchlist, monkeypatch):
+    from us_market_monitor.processors.caption import short_title
+
+    # Figures are stripped before the length check, so this 33-char title fits.
+    assert short_title('GE Vernova, Trench Group 인수') == 'GE Vernova, Trench Group 인수'
+    assert short_title('연준 FOMC 성명: 경제 활동 강세, 인플레이션 목표 달성 위한 추가 정보 수집') == '연준 FOMC 성명'
+    assert short_title('샌디스크 주가 상승, AI 메모리 수요 증가 및 실적 발표 전 기대감') == '샌디스크 주가 상승'
+    long = '알파벳 Q3 실적: 매출 25% 증가, 클라우드 수익 103% 급증, 2027 년 CAPEX 대폭 확대 전망'
+    assert short_title(long) == '알파벳 Q3 실적'
+    for title in ('GE Vernova, Trench Group 인수', long, '샌디스크 주가 상승, AI 메모리 수요 증가 및 실적 발표 전 기대감'):
+        assert 1 <= len(short_title(title)) <= 32
+
+    event, record = sample(event_factory)
+    client = CaptionProcessor(SimpleNamespace(ollama_model='local', ollama_base_url='http://127.0.0.1:11435',
+                                              ollama_timeout=10, watchlist=watchlist))
+    output = copy.deepcopy(record['result'])
+    monkeypatch.setattr(client, '_select', lambda units, headline: (
+        'CPU 사업·실적 전망: 매출 두 배 이상 증가 및 Grace 누적 매출 확대 전망',
+        [i['source_id'] for i in output['items']]))
+    monkeypatch.setattr(client, '_request', lambda units, *a, **kw: {
+        'title_ko': output['title_ko'], 'items': [i for i in output['items'] if i['source_id'] == units[0]['id']]})
+    assert client.translate(event)
+    assert len(event.metadata['caption_brief']['result']['title_ko']) <= 32
+
+
 def test_changed_source_invalidates_caption_cache(event_factory):
     event, record = sample(event_factory)
     event.title += ' changed'
@@ -150,7 +208,8 @@ def test_production_repairs_only_invalid_fact_and_persists_verified_caption(even
     repo.close()
 
 
-def test_production_holds_untranslated_or_invalid_content(event_factory, watchlist, monkeypatch):
+def test_untranslated_content_is_never_published(event_factory, watchlist, monkeypatch):
+    """A secondary bullet left in English is dropped, never delivered."""
     event, record = sample(event_factory)
     client = CaptionProcessor(SimpleNamespace(ollama_model='local', ollama_base_url='http://localhost',
                                              ollama_timeout=10, watchlist=watchlist))
@@ -159,11 +218,62 @@ def test_production_holds_untranslated_or_invalid_content(event_factory, watchli
     monkeypatch.setattr(client, '_select', lambda units, headline: (
         bad['title_ko'], [i['source_id'] for i in bad['items']]))
     monkeypatch.setattr(client, '_request', lambda units, *a, **kw: {
-        'title_ko': bad['title_ko'], 'items': [i for i in bad['items'] if i['source_id'] == units[0]['id']]})
+        'title_ko': bad['title_ko'],
+        'items': [copy.deepcopy(i) for i in bad['items'] if i['source_id'] == units[0]['id']]})
+    assert client.translate(event)
+    published = visible_text(render_caption(event, event.metadata['caption_brief']))
+    assert 'Revenue is expected to double' not in published
+    assert 'FY28 CPU 매출 두 배 이상 증가 예상' in published
+    assert event.metadata['caption_brief']['stats']['dropped'][0]['code'] == 'not_korean'
+
+
+def test_production_holds_when_every_fact_is_invalid(event_factory, watchlist, monkeypatch):
+    """With no verifiable fact at all there is nothing to deliver, so the alert is held."""
+    event, record = sample(event_factory)
+    client = CaptionProcessor(SimpleNamespace(ollama_model='local', ollama_base_url='http://localhost',
+                                             ollama_timeout=10, watchlist=watchlist))
+    bad = copy.deepcopy(record['result'])
+    for item in bad['items']:
+        item.update(text_ko='Revenue is expected to double.', focus_ko='double')
+    monkeypatch.setattr(client, '_select', lambda units, headline: (
+        bad['title_ko'], [i['source_id'] for i in bad['items']]))
+    monkeypatch.setattr(client, '_request', lambda units, *a, **kw: {
+        'title_ko': bad['title_ko'],
+        'items': [copy.deepcopy(i) for i in bad['items'] if i['source_id'] == units[0]['id']]})
     assert not client.translate(event)
     assert 'caption_brief' not in event.metadata
     assert event.metadata['processing_failure']['code']
-    assert event.metadata['caption_work']['claims']  # Good facts survive the retry.
+
+
+def test_unverifiable_secondary_bullet_is_dropped_but_the_lead_fact_is_required(
+        event_factory, watchlist, monkeypatch):
+    """One bad unit out of many must not suppress the verified facts."""
+    event, record = sample(event_factory)
+    config = SimpleNamespace(ollama_model='local', ollama_base_url='http://127.0.0.1:11435',
+                             ollama_timeout=10, watchlist=watchlist)
+    client = CaptionProcessor(config)
+    output = copy.deepcopy(record['result'])
+    good, bad = output['items'][0], output['items'][1]
+    # The second unit keeps inventing a figure the cited unit does not support.
+    bad['text_ko'], bad['focus_ko'] = 'Grace 매출 $9 billion 초과', '매출 $9 billion 초과'
+    monkeypatch.setattr(client, '_select', lambda units, headline: (
+        output['title_ko'], [good['source_id'], bad['source_id']]))
+    monkeypatch.setattr(client, '_request', lambda units, *a, **kw: {
+        'title_ko': output['title_ko'],
+        'items': [copy.deepcopy(i) for i in output['items'] if i['source_id'] == units[0]['id']]})
+
+    assert client.translate(event)
+    result = event.metadata['caption_brief']['result']
+    assert [i['source_id'] for i in result['items']] == [good['source_id']]
+    assert event.metadata['caption_brief']['stats']['dropped'][0]['code'] == 'unsupported_claim_numbers'
+
+    # The lead fact itself is not optional: if it fails, the alert is still held.
+    event.metadata.pop('caption_brief', None)
+    event.metadata.pop('caption_work', None)
+    monkeypatch.setattr(client, '_select', lambda units, headline: (
+        output['title_ko'], [bad['source_id'], good['source_id']]))
+    assert not client.translate(event)
+    assert 'caption_brief' not in event.metadata
 
 
 def test_caption_rejects_ttm_changed_to_year_over_year(event_factory):

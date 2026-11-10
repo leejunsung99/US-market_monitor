@@ -8,10 +8,15 @@ import time
 from datetime import UTC, datetime
 from decimal import Decimal
 
+from us_market_monitor.notifications.compact import nominal
 from us_market_monitor.notifications.preview_layout import COMPANY_NAMES
 from us_market_monitor.processors.briefing import expand_money_ranges
 from us_market_monitor.processors.ollama import source_text
-from us_market_monitor.processors.ollama_grounded import checked_claim, source_units
+from us_market_monitor.processors.ollama_grounded import (
+    checked_claim,
+    restore_comparison_order,
+    source_units,
+)
 from us_market_monitor.processors.ollama_preview import OllamaPreview, protect_numbers
 
 VERSION = 'material-photo-caption-v3-selected-units'
@@ -86,6 +91,22 @@ def focus_span(text):
     return text[:65].rstrip()
 
 
+def short_title(title):
+    """Trim an over-long subject at its own boundaries; cutting adds no claim."""
+    if len(title) <= 32:
+        return title
+    head = re.split(r'\s*[:|·]\s*', title)[0].strip(' ,·:|-')
+    if 2 <= len(head) <= 32 and re.search(r'[가-힣]', head):
+        return head
+    cut = title[:32]
+    # A comma is a real clause boundary; fall back to a word break only without one.
+    comma = cut.rfind(',')
+    boundary = comma if comma >= 8 else cut.rfind(' ')
+    if boundary >= 8:
+        cut = cut[:boundary]
+    return cut.strip(' ,·:|-')
+
+
 def ground_display(item, basis):
     """Restore narrow metric roles explicitly present in the cited unit."""
     text = item['text_ko']
@@ -107,6 +128,11 @@ def ground_display(item, basis):
         if quarter not in text:
             text = text.replace('중국', quarter + ' 전망에서 중국', 1)
     text = re.sub(r'\bfiscal\s+(20\d{2})\b', r'FY\1', text, flags=re.I)
+    # A source list marker is not part of the fact; the renderer adds its own bullet.
+    text = re.sub(r'^\s*[-–—•·*]\s*', '', text)
+    # Normalize exactly as checked_claim will, so the emphasis span below is a
+    # real substring of the delivered text instead of the pre-outline wording.
+    text = restore_comparison_order(nominal(text.strip()), basis)
     item['text_ko'] = text
     if re.search(r'supply for|shortage|headwinds|uncertain|no guarantee|not announced a completed', basis, re.I):
         item['section'] = '주요 위험'
@@ -300,7 +326,7 @@ Return only JSON.'''} , {'role': 'user', 'content': json.dumps({
         if 'selected' not in work:
             work['title'], work['selected'] = self._select(candidates, event.title)
         title = work['title']
-        if not isinstance(title, str) or not re.search(r'[가-힣]', title) or len(title) > 32:
+        if not isinstance(title, str) or not re.search(r'[가-힣]', title):
             raise ValueError('invalid_caption_title')
         title = re.sub(r'[$€£]\s*[\d,.]+\s*(?:억|조|billion|million|달러)?', '', title).strip()
         issuer = self.issuer(event)
@@ -312,7 +338,12 @@ Return only JSON.'''} , {'role': 'user', 'content': json.dumps({
                 title = re.sub(r'^' + re.escape(alias) + r'(?:\s*\([A-Z]+\))?\s*[|:·-]?\s*', '', title, flags=re.I)
             if not re.search(r'[가-힣]', title):
                 title = '주요 소식 요약'
-        items = []
+        # Figures and the issuer prefix are gone by now; shorten what remains so a
+        # long subject converges instead of failing identically on every retry.
+        title = short_title(title)
+        if not re.search(r'[가-힣]', title):
+            raise ValueError('invalid_caption_title')
+        items, dropped = [], []
         for source_id in work['selected']:
             basis = [u for u in candidates if u['id'] == source_id]
             if not basis:
@@ -338,11 +369,19 @@ Return only JSON.'''} , {'role': 'user', 'content': json.dumps({
                     work['claims'].pop(str(source_id), None)
                     error_code = str(error)
                     if attempt:
-                        raise
+                        # Selection is materiality-ordered, so the first unit carries
+                        # the lead fact and must verify. A secondary bullet that stays
+                        # unverifiable is dropped instead of suppressing the verified
+                        # ones; everything delivered still passes the full checks.
+                        if not items:
+                            raise
+                        dropped.append({'source_id': source_id, 'code': error_code})
+                        break
         result = {'title_ko': title, 'items': items}
         validate_caption_result(result, candidates, source)
         record = {'fingerprint': key, 'source': source, 'units': candidates, 'result': result,
                   'issuer': issuer, 'model': self.client.model, 'version': VERSION,
-                  'stats': {'seconds': round(time.monotonic() - started, 2)}}
+                  'stats': {'seconds': round(time.monotonic() - started, 2),
+                            'dropped': dropped}}
         event.metadata['caption_brief'] = record
         return record

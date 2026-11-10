@@ -10,10 +10,39 @@ from us_market_monitor.processors.briefing import prepare_brief
 from us_market_monitor.processors.normalizer import canonical_url, plain_text
 
 
+def prose_container(page):
+    """Locate the block holding the bulk of the prose when no known container matches.
+
+    Publishers rename and drop their article wrappers, which silently left the
+    body empty and reduced an alert to its one-sentence teaser. Scoring by
+    paragraph text keeps this publisher-agnostic; navigation and promo blocks
+    lose because they hold no long paragraphs.
+    """
+    scores, nodes = {}, {}
+    for paragraph in page.find_all('p'):
+        text = paragraph.get_text(' ', strip=True)
+        if len(text) < 80 or paragraph.find_parent(['nav', 'aside', 'footer', 'form']):
+            continue
+        for depth, ancestor in enumerate(paragraph.parents):
+            if ancestor.name in {'[document]', 'html', 'body'}:
+                break
+            key = id(ancestor)
+            scores[key] = scores.get(key, 0) + len(text)
+            nodes[key] = (depth, ancestor)
+    if not scores:
+        return None
+    best = max(scores.values())
+    # Ancestors inherit every descendant's score, so the tightest wrapper that
+    # still holds essentially all the prose is the deepest near-top scorer.
+    return min((nodes[key] for key, score in scores.items() if score >= best * 0.9),
+               key=lambda pair: pair[0])[1]
+
+
 def article_text(page):
     """Read article containers only; never summarize navigation or page chrome."""
-    article = (page.select_one('.xn-content, .caas-body, [itemprop="articleBody"]')
-               or page.select_one('article, #article'))
+    article = (page.select_one('.xn-content, .caas-body, .article-body, [itemprop="articleBody"]')
+               or page.select_one('article, #article')
+               or prose_container(page))
     if article:
         for node in article.select("script, style, nav, aside, footer, form"):
             node.decompose()

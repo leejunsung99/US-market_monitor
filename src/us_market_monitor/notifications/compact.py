@@ -40,6 +40,10 @@ def nominal(text):
                                 ('이다', '임'), ('했다', '했음'), ('컸다', '컸음'),
                                 ('준다', '줌'), ('보인다', '보임')]:
         text = re.sub(re.escape(ending) + r'[.!。]?$', replacement, text.strip())
+    # The outline format forbids polite endings, so derive the nominal form from any
+    # verb stem instead of a fixed whitelist; a style gate must not hold valid facts.
+    for ending in ('했습니다', '하였습니다', '되었습니다', '됐습니다'):
+        text = re.sub(r'([가-힣]{2,})' + ending + r'[.!。]?$', r'\1', text.strip())
     text = text.rstrip('.!。')
     if len(text) > 1 and text.endswith('다') and '가' <= text[-2] <= '힣':
         if (ord(text[-2]) - 0xAC00) % 28 == 20:  # past-tense 받침 ㅆ: 올랐다 → 올랐음

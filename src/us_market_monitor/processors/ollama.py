@@ -33,7 +33,9 @@ def ensure_gpu_server(config):
         if not helper.exists():
             return
         subprocess.run(['powershell.exe', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', str(helper)],
-                       cwd=config.root, capture_output=True, timeout=30,
+                       # The helper leaves Ollama running; a captured pipe would be inherited and never close.
+                       cwd=config.root, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                       stderr=subprocess.DEVNULL, timeout=30,
                        creationflags=subprocess.CREATE_NO_WINDOW, check=False)
 
 

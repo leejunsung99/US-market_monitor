@@ -17,6 +17,40 @@ def test_prnewswire_body_excludes_site_controls_and_company_bio():
     assert article_text(page) == 'Qualcomm announced a call on November 4, 2026.'
 
 
+def test_unknown_publisher_markup_still_yields_the_body_not_the_teaser():
+    """A renamed article wrapper used to leave body empty, cutting alerts to one line."""
+    from bs4 import BeautifulSoup
+
+    lede = 'Oil prices fell sharply as investors braced for a packed week of jobs reports. ' * 2
+    detail = 'The Nasdaq Composite gave up earlier gains as traders weighed the midterm outlook. ' * 2
+    page = BeautifulSoup(
+        '<body><nav><p>' + 'Markets Pro subscribe now for full access to our coverage. ' * 2
+        + '</p></nav><div class="wrapper"><div class="group"><p>' + lede + '</p></div>'
+        '<div class="group"><p>' + detail + '</p></div></div>'
+        '<footer><p>' + 'Sign up for our newsletter and get alerts delivered daily. ' * 2
+        + '</p></footer></body>', 'html.parser')
+    text = article_text(page)
+    assert lede.strip() in text
+    assert detail.strip() in text
+    # Chrome holds no long prose, so it must lose the density comparison.
+    assert 'subscribe now' not in text
+    assert 'newsletter' not in text
+
+
+def test_promo_heading_before_the_body_does_not_discard_the_article():
+    """fool.com puts a promo block above the body; .article-body keeps it exact."""
+    from bs4 import BeautifulSoup
+
+    body = 'Anthropic is about to go public in one of the biggest offerings of the year. ' * 2
+    page = BeautifulSoup(
+        '<div class="contents"><h2>Should You Invest $1,000 in Anthropic Right Now?</h2>'
+        '<p>' + 'Our analyst team has an opinion you may want to hear first. ' * 2 + '</p>'
+        '<div class="article-body"><p>' + body + '</p></div></div>', 'html.parser')
+    text = article_text(page)
+    assert body.strip() in text
+    assert 'analyst team' not in text
+
+
 def test_rich_article_order_and_source_only(event_factory, monkeypatch):
     event = event_factory("Chip news", summary="Publisher facts. Another fact.")
     event.article_summary = event.summary
