@@ -273,9 +273,12 @@ def main(argv=None):
                 args.dry_run,
                 args.once,
             )
-            ensure_gpu_server(config)
-            log.info('Korean processing backend=ollama model=%s endpoint=%s',
-                     config.ollama_model, config.ollama_base_url)
+            if config.caption_backend == 'ollama':
+                ensure_gpu_server(config)
+                log.info('Korean processing backend=ollama model=%s endpoint=%s',
+                         config.ollama_model, config.ollama_base_url)
+            else:
+                log.info('Korean processing backend=claude-cli model=%s', config.caption_claude_model)
             radar = Radar(
                 collectors,
                 repo,

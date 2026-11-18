@@ -57,6 +57,10 @@ class Config:
     ollama_base_url: str = 'http://127.0.0.1:11435'
     ollama_model: str = 'qwen3.5:9b'
     ollama_timeout: float = 600
+    # Korean caption writer: 'claude' (Claude Code CLI) or 'ollama' (project-local Ollama).
+    caption_backend: str = 'claude'
+    caption_claude_model: str = 'sonnet'
+    caption_claude_timeout: float = 300
     economic_enabled: bool = True
     economic_interval: float = 120
     economic_initial_lookback: float = 24
@@ -283,6 +287,9 @@ class Config:
             ollama_url,
             os.getenv('OLLAMA_MODEL', 'qwen3.5:9b').strip(),
             number('OLLAMA_TIMEOUT_SECONDS', 600, 30, 1800),
+            caption_backend=(os.getenv('CAPTION_BACKEND', 'claude').strip().lower() or 'claude'),
+            caption_claude_model=os.getenv('CAPTION_CLAUDE_MODEL', 'sonnet').strip(),
+            caption_claude_timeout=number('CAPTION_CLAUDE_TIMEOUT_SECONDS', 300, 30, 1800),
             economic_enabled=boolean("ECONOMIC_ENABLED", True),
             economic_interval=number("ECONOMIC_INTERVAL_SECONDS", 120, 60, 86400),
             economic_initial_lookback=number("ECONOMIC_INITIAL_LOOKBACK_HOURS", 24, 0, 48),
